@@ -1,0 +1,41 @@
+{
+  "FixedFileInfo": {
+    "FileVersion": {
+      "Major": 0,
+      "Minor": 0,
+      "Patch": 0,
+      "Build": 0
+    },
+    "ProductVersion": {
+      "Major": 0,
+      "Minor": 0,
+      "Patch": 0,
+      "Build": 0
+    },
+    "FileFlagsMask": "3f",
+    "FileFlags ": "00",
+    "FileOS": "040004",
+    "FileType": "02",
+    "FileSubType": "00"
+  },
+  "StringFileInfo": {
+    "Comments": "KBM-locked mixed input for Enshrouded; derived from EnshroudedMixedInput (GPL-3.0)",
+    "CompanyName": "trmo",
+    "FileDescription": "EnshroudedMixInput",
+    "FileVersion": "0.0.0.0",
+    "InternalName": "EnshroudedMixInput",
+    "LegalCopyright": "Copyright (C) 2026; derived from EnshroudedMixedInput by Peter Repukat - GPL-3.0",
+    "LegalTrademarks": "",
+    "OriginalFilename": "EnshroudedMixInput.dll",
+    "PrivateBuild": "",
+    "ProductName": "EnshroudedMixInput",
+    "ProductVersion": "0.0.0.0",
+    "SpecialBuild": ""
+  },
+  "VarFileInfo": {
+    "Translation": {
+      "LangID": "0409",
+      "CharsetID": "04B0"
+    }
+  }
+}

@@ -1,0 +1,369 @@
+# EnshroudedMixInput — Software Requirements Specification
+
+**Document purpose:** handoff for continuing work in a fresh chat.  
+**Status:** scaffolding complete; behavior still matches upstream (gamepad UI + mouse merge). Target behavior not implemented yet.  
+**Last updated:** 2026-11-05
+
+---
+
+## 1. Problem
+
+[Enshrouded](https://store.steampowered.com/app/1203220/Enshrouded/) supports **either** controller **or** mouse/keyboard, not both at once. Touching a controller switches UI + bindings to gamepad; touching mouse/keyboard switches back to KBM. The switch stutters and refreshes UI.
+
+**Hardware goal:** Azeron Keyzen (XInput analog stick) + normal keyboard keys + mouse.
+
+**What fails without a mod:** stick activity forces gamepad mode → keyboard stops feeling native / UI flips; without stick, you lose analog movement.
+
+**Upstream inspiration:** [Alia5/EnshroudedMixedInput](https://github.com/Alia5/EnshroudedMixedInput) (GPL-3.0), vendored read-only at [`inspiration/`](inspiration/). It keeps **gamepad mode** and lets **mouse** work without switching to KBM. Keyboard still switches mode. That is the opposite polarity of what we need.
+
+---
+
+## 2. Goals (acceptance criteria)
+
+When the mod is installed next to `enshrouded.exe`:
+
+| ID | Requirement | Done when |
+|----|-------------|-----------|
+| G1 | Keyboard input works | Keys drive actions while stick is also in use; no forced gamepad UI |
+| G2 | Mouse input works | Look / buttons / wheel work without mode thrashing |
+| G3 | XInput analog stick works | Stick contributes analog movement (and later camera if desired) while staying in KBM mode |
+| G4 | UI locked to keyboard/mouse | Prompts and input mode stay KBM; touching stick does **not** flip to gamepad UI |
+
+**Non-goals (for now):**
+
+- Full gamepad-button parity while locked to KBM UI (stick/axes first)
+- Supporting two mods at once (same `dinput8.dll` slot)
+- Linux/Proton packaging polish (Windows primary)
+- Changing `inspiration/` (read-only reference)
+
+---
+
+## 3. Current project state
+
+### 3.1 Layout
+
+```text
+EnshroudedMixInputMod/          ← active Go project (repo root)
+  inspiration/                  ← READ-ONLY copy of upstream
+  emi/extension/                ← c-shared DLL entry
+  loader/                       ← dinput8.dll proxy
+  hook/ pattern/ game/ keen/    ← RE + patching infrastructure
+  mod/mixedinput/               ← input behavior (still upstream logic)
+  justfile SETUP.md README.md
+  srs.md                        ← this document
+```
+
+### 3.2 Identity
+
+| Item | Value |
+|------|--------|
+| Go module | `github.com/trmo/EnshroudedMixInputMod` |
+| Extension DLL | `EnshroudedMixInput.dll` |
+| Loader DLL | `dinput8.dll` |
+| Log file | `EnshroudedMixInput.log` |
+| Env prefix | `EMIM_` (`EMIM_LOG_LEVEL`, `EMIM_LOG_CONSOLE`, `EMIM_SUPPRESS_LOADING`, `EMIM_GAME_DIR`) |
+| License | GPL-3.0; derived from EnshroudedMixedInput |
+
+### 3.3 Build / deploy
+
+```powershell
+just build          # → dist/EnshroudedMixInput.dll + dist/dinput8.dll
+just build Release
+just deploy         # copies into EMIM_GAME_DIR (default Steam Enshrouded path)
+```
+
+Toolchain: see [`SETUP.md`](SETUP.md). `justfile` uses `-G "MinGW Makefiles"` for LLVM-MinGW.
+
+### 3.4 What the code does today (upstream polarity)
+
+In [`mod/mixedinput/mixed_input.go`](mod/mixedinput/mixed_input.go):
+
+1. **Jump-table patch** on `updateInputModeFromEvent`: mouse event types **9–14** → “no change” (do not switch to KBM).
+2. **`updateGameplayAction` detour:** if mode == **Gamepad**, also evaluate the **KBM** binding half and set active.
+3. **`addDirectionalActionInput` detour:** if mode == **Gamepad**, also add **KBM** directional values (mouse look, etc.).
+
+Keen constants: [`keen/input.go`](keen/input.go) — `InputModeKeyboardMouse=0`, `InputModeGamepad=1`. KBM binding offsets `32` / `84` are known. **Gamepad binding offsets inside the 280-byte action struct are not yet documented** in this repo.
+
+---
+
+## 4. Target technical approach
+
+**Invert the upstream design:**
+
+| Concern | Upstream | Ours |
+|---------|----------|------|
+| Mode lock | Ignore mouse → stay Gamepad | Ignore gamepad events → stay **KeyboardMouse** |
+| Merge | In Gamepad, inject KBM bindings | In **KeyboardMouse**, inject **gamepad** stick/axis bindings |
+| UI | Gamepad prompts | **KBM prompts** |
+
+Same hook points, flipped polarity:
+
+```text
+updateInputModeFromEvent  → patch gamepad event jump-table entries to "no change"
+updateGameplayAction      → when mode==KBM, also evaluate gamepad half → set active
+addDirectionalActionInput → when mode==KBM, add gamepad stick/axis directional values
+```
+
+### 4.1 Known RE facts (from patterns / keen)
+
+- `updateInputModeFromEvent(actions, event*)`: `actions[0]` = `InputMode`; `event+0x0c` = event type.
+- Jump table covers event types **1–16** (`lea eax,[r9-1]` then `cmp eax,0Fh`). Mouse→KBM cases are types **9–14**. Gamepad→Gamepad cases are other entries in that table (IDs not yet named in `keen`).
+- Action size **280** bytes; header **8** bytes; KBM primary/secondary bindings at **+32** / **+84**.
+- Directional slots in [`directional.go`](mod/mixedinput/directional.go): buttons `0`, gamepad analog `2`, mouse `4`, special `6`.
+- Movement actions `0–3`, camera `4–7`.
+
+### 4.2 Unknowns to resolve (early tasks)
+
+1. Which jump-table event types store `InputModeGamepad`.
+2. Offsets of gamepad primary/secondary bindings within an action.
+3. How to call / locate the **gamepad** evaluate half (upstream already finds the KBM half relative to the active-store site).
+
+---
+
+## 5. Constraints
+
+1. **Do not modify** [`inspiration/`](inspiration/).
+2. **GPL-3.0:** keep license + attribution if distributing.
+3. Prefer **small, verifiable increments**; do not invert everything in one commit/PR-sized dump.
+4. Do not install alongside the original EnshroudedMixedInput mod (conflicts on `dinput8.dll`).
+5. Signature patterns break on game updates — keep signature tests green when `enshrouded.exe` is available.
+6. Ask mode / plan mode: follow user mode; this SRS does not authorize skipping verification.
+
+---
+
+## 6. Work plan (incremental tasks)
+
+Work **in order**. Each task has a clear verify step. Check boxes in this file as you complete them (or track in chat).
+
+---
+
+### Phase 0 — Baseline (confirm foundation)
+
+#### Task 0.1 — Clean rebuild
+
+**Do:** From repo root, with toolchain on PATH:
+
+```powershell
+just clean
+just build
+```
+
+**Verify:**
+
+- [ ] `dist/EnshroudedMixInput.dll` exists
+- [ ] `dist/dinput8.dll` exists
+- [ ] No build errors
+
+#### Task 0.2 — Optional signature smoke test
+
+**Do:**
+
+```powershell
+$env:EMIM_GAME_DIR = "<path to Enshrouded with enshrouded.exe>"
+just test
+```
+
+**Verify:**
+
+- [ ] Signature / jump-table tests that need the exe pass or skip cleanly with a clear reason
+- [ ] No unexpected package test failures
+
+#### Task 0.3 — In-game baseline (current upstream behavior)
+
+**Do:** Remove any other `dinput8.dll` / old EMI DLL. `just deploy`. Launch game. Touch stick, then mouse, then keyboard. Read `EnshroudedMixInput.log`.
+
+**Verify:**
+
+- [ ] Log shows mod loaded + `mixed_input` installed
+- [ ] Observe current behavior (likely: mouse OK in gamepad mode; keyboard still flips — document what you see)
+
+---
+
+### Phase 1 — Reverse-engineer gamepad mode switch
+
+Goal: know which events flip UI to gamepad so we can neutralize them.
+
+#### Task 1.1 — Map `updateInputModeFromEvent` jump table
+
+**Do:** Using the existing pattern finder / debugger / dump of jump-table entries (same helpers as `mouseEventJumpTableEntries` in [`mixed_input.go`](mod/mixedinput/mixed_input.go)):
+
+- Locate jump table base and each entry for event types 1–16.
+- Classify each entry: no-change, KeyboardMouse store, Gamepad store, or other.
+
+**Verify:**
+
+- [ ] Written table in this SRS or a short `notes/input-mode-events.md`: event type → case
+- [ ] Mouse 9–14 still match “KeyboardMouse store” before any new patch (sanity)
+
+#### Task 1.2 — Confirm gamepad event types in-game or via RE
+
+**Do:** Identify which types fire on XInput stick move / axis (Keyzen). Prefer static RE first; confirm with logging if needed (temporary log in a detour is OK in a later task).
+
+**Verify:**
+
+- [ ] List of event type IDs that set `InputModeGamepad`
+- [ ] Constants added (or drafted) in `keen/input.go` with comments
+
+#### Task 1.3 — Document gamepad binding layout
+
+**Do:** Find primary/secondary gamepad binding offsets inside the 280-byte action (mirror KBM 32/84). Note how `updateGameplayAction` selects the gamepad half (`r12` in pattern comments).
+
+**Verify:**
+
+- [ ] `ActionGamepadPrimaryBinding` / `ActionGamepadSecondaryBinding` (names flexible) values written down
+- [ ] Confidence note: how they were found (disasm / RTTI / comparison)
+
+---
+
+### Phase 2 — Lock UI to KeyboardMouse
+
+#### Task 2.1 — Patch gamepad jump-table entries to “no change”
+
+**Do:** Extend (or replace) the mouse-only jump-table patch so **gamepad mode-changing** entries point at the same no-change/`ret` path. Decide whether mouse entries still need patching:
+
+- Preferred for our goal: mode stays KBM; mouse already wants KBM, so mouse→KBM is fine (may leave mouse entries alone).
+- Must neutralize gamepad→Gamepad entries.
+
+**Verify:**
+
+- [ ] `just build` succeeds
+- [ ] Unit/signature test updated if jump-table expectations change
+- [ ] In-game: moving Keyzen stick does **not** switch UI to gamepad prompts
+- [ ] Log still shows successful install
+
+#### Task 2.2 — Ensure mode starts / stays KBM
+
+**Do:** If stick alone never sets gamepad but something else still flips, harden (e.g. force-store KBM on those paths, or patch remaining cases). Prefer minimal patches.
+
+**Verify:**
+
+- [ ] Stick spam + mouse look + typing: UI remains KBM for a multi-minute session
+- [ ] No stuttering mode thrash
+
+#### Task 2.3 — Keyboard + mouse native check
+
+**Do:** With mode locked KBM, play with keyboard + mouse only (stick idle).
+
+**Verify:**
+
+- [ ] Movement keys, inventory, chat/typing as applicable work
+- [ ] Mouse look and buttons work
+- [ ] G1 and G2 satisfied without stick
+
+---
+
+### Phase 3 — Merge gamepad stick into KBM mode
+
+#### Task 3.1 — Invert `updateGameplayAction` merge
+
+**Do:** Change detour so when mode == **KeyboardMouse**, also evaluate the **gamepad** half and OR into active (mirror current gamepad←KBM merge).
+
+**Verify:**
+
+- [ ] Builds
+- [ ] With stick input, relevant actions become active while mode remains KBM (log/trace or in-game movement attempt)
+- [ ] Idle stick does not pin actions active
+
+#### Task 3.2 — Invert `addDirectionalActionInput` for stick/axis
+
+**Do:** When mode == KBM, read gamepad stick/axis bindings and `addDirectional` into the gamepad analog slot. Focus first on **movement** actions 0–3.
+
+**Verify:**
+
+- [ ] Builds
+- [ ] In-game: stick moves character with analog feel while UI stays KBM
+- [ ] Keyboard WASD still works (G1 + G3)
+
+#### Task 3.3 — Mouse look coexistence
+
+**Do:** Confirm mouse relative look still works while stick is used for movement. Fix scaling/slot conflicts if look breaks.
+
+**Verify:**
+
+- [ ] Can strafe with stick and look with mouse simultaneously
+- [ ] No sudden camera snaps from stick unless stick is bound to camera (out of scope to rematch gamepad camera unless easy)
+
+#### Task 3.4 — Decide camera-from-stick policy
+
+**Do:** Explicit product choice: stick = movement only (recommended for Keyzen + mouse) vs also feed camera axes. Implement only the chosen policy; document in README.
+
+**Verify:**
+
+- [ ] README states the policy
+- [ ] In-game behavior matches that policy
+
+---
+
+### Phase 4 — Cleanup and product polish
+
+#### Task 4.1 — Remove or gate obsolete mouse-keep-gamepad behavior
+
+**Do:** Upstream mouse jump-table patch may be unnecessary or harmful for our polarity. Remove dead code paths; rename mod (`mixed_input` → something clearer) if helpful.
+
+**Verify:**
+
+- [ ] Code comments match actual behavior
+- [ ] `just build` + quick in-game smoke of G1–G4
+
+#### Task 4.2 — Update docs
+
+**Do:** Update [`README.md`](README.md) status, goals, install notes, env vars. Keep GPL attribution. Optionally tick completed tasks in this SRS.
+
+**Verify:**
+
+- [ ] README no longer says “behavior still upstream” once Phase 3 is done
+- [ ] SETUP still accurate
+
+#### Task 4.3 — Final acceptance pass
+
+**Do:** Full play session with Keyzen stick + keyboard + mouse.
+
+**Verify checklist:**
+
+- [ ] **G1** Keyboard works with stick in use
+- [ ] **G2** Mouse works with stick in use
+- [ ] **G3** Stick analog movement works
+- [ ] **G4** UI never switches to gamepad
+- [ ] Log clean of install errors
+- [ ] Uninstall (delete two DLLs) restores vanilla switching
+
+---
+
+## 7. Suggested chat workflow
+
+1. Open a new chat; point at this file: `@srs.md`.
+2. Say which task ID to implement (e.g. “Implement Task 1.1”).
+3. Implement only that task; run its **Verify** steps before starting the next.
+4. If RE blocks a task, stop and record findings under Phase 1 rather than guessing offsets.
+5. Prefer Agent mode for code changes; Plan mode for multi-task design forks.
+
+---
+
+## 8. Quick reference — files you will touch
+
+| Area | Paths |
+|------|--------|
+| Behavior | [`mod/mixedinput/mixed_input.go`](mod/mixedinput/mixed_input.go), [`directional.go`](mod/mixedinput/directional.go), [`patterns.go`](mod/mixedinput/patterns.go) |
+| Constants | [`keen/input.go`](keen/input.go) |
+| Tests | [`mod/mixedinput/jump_table_test.go`](mod/mixedinput/jump_table_test.go), [`signature_test.go`](mod/mixedinput/signature_test.go) |
+| Loader name/env | [`loader/proxy.c`](loader/proxy.c) (only if rename needed) |
+| Docs | [`README.md`](README.md), this [`srs.md`](srs.md) |
+| Reference only | [`inspiration/`](inspiration/) |
+
+---
+
+## 9. Risk register
+
+| Risk | Mitigation |
+|------|------------|
+| Wrong gamepad binding offsets | Phase 1.3 before Phase 3; verify with one action first |
+| Missed gamepad event type still flips UI | Phase 1.1 full table; Phase 2.2 soak test |
+| Game update breaks signatures | Keep pattern tests; re-scan with `EMI`/`EMIM_GAME_DIR` |
+| Both mods installed | Document; deploy only our `dinput8.dll` |
+| Stick deadzone / noise activates actions | Threshold / only merge stick+axis kinds, not all gamepad buttons |
+
+---
+
+## 10. Definition of done (project)
+
+Project is done when Phase 4.3 verify checklist passes on the user’s Keyzen + mouse + keyboard setup, docs match behavior, and `inspiration/` remains an unmodified reference.

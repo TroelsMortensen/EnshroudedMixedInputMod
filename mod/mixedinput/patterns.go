@@ -13,10 +13,11 @@ const (
 	jumpTableEventTypeCount = 16 // cmp eax, 0Fh
 	jumpTableEntrySize      = 4
 
-	actionEnabledDispOffset = 13 // 80 B9 disp32 00
-	evaluateCallRelOffset   = 32 // E8 rel32
-	evaluateCallEnd         = 36
-	activeStoreDispOffset   = 38 // 88 86 disp32
+	actionEnabledDispOffset         = 13 // 80 B9 disp32 00
+	previouslyActiveStoreDispOffset = 2  // 88 86 disp32
+	evaluateCallRelOffset           = 32 // E8 rel32
+	evaluateCallEnd                 = 36
+	activeStoreDispOffset           = 38 // 88 86 disp32
 
 	getBindingCallRelOffset                = 66 // E8 rel32 in AddDirectionalActionInputPattern
 	getBindingCallEnd                      = 70

@@ -48,3 +48,19 @@ func TestBindingLayout(t *testing.T) {
 		t.Fatalf("half size %d or binding size %d disagree with the offsets", keen.ActionHalfSize, keen.BindingSize)
 	}
 }
+
+// The active state offsets stored by updateGameplayAction match the keen constants.
+func TestActiveStoreOffsets(t *testing.T) {
+	module, image := sigtest.LoadModule(t, game.ModuleName)
+
+	activeStore, err := hook.FindUniquePattern(module, image, mixedinput.UpdateGameplayActionActiveStorePattern)
+	if err != nil {
+		t.Fatalf("updateGameplayAction active state store: %v", err)
+	}
+
+	active, previouslyActive := mixedinput.ReadActiveStoreOffsets(module, image, activeStore)
+	if active != keen.ActionActive || previouslyActive != keen.ActionPreviouslyActive {
+		t.Fatalf("got active %#x, previously active %#x, expected %#x, %#x",
+			active, previouslyActive, keen.ActionActive, keen.ActionPreviouslyActive)
+	}
+}

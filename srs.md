@@ -1,7 +1,7 @@
 # EnshroudedMixInput — Software Requirements Specification
 
 **Document purpose:** handoff for continuing work in a fresh chat.  
-**Status:** Phases 0–2 complete. Gamepad events no longer change the input mode, so the game stays in KeyboardMouse and keyboard + mouse work natively. Stick input is ignored until Phase 3 merges it. Next is Task 3.1.  
+**Status:** Phases 0–2 complete. Gamepad events no longer change the input mode, so the game stays in KeyboardMouse and keyboard + mouse work natively. Task 3.1 is implemented: in KeyboardMouse mode the gamepad half of every action also counts towards its active state (build and tests pass, in-game check pending). Next is the Task 3.1 in-game check, then Task 3.2.  
 **Last updated:** 2026-11-09
 
 ---
@@ -79,7 +79,7 @@ Toolchain: see [`SETUP.md`](SETUP.md). `justfile` uses `-G "MinGW Makefiles"` fo
 In [`mod/mixedinput/mixed_input.go`](mod/mixedinput/mixed_input.go):
 
 1. **Jump-table patch** on `updateInputModeFromEvent`: gamepad event types **2–5** → “no change” (do not switch to Gamepad). Mouse types 9–14 are unpatched and store KBM as in vanilla. (Task 2.1)
-2. **`updateGameplayAction` detour (still upstream polarity):** if mode == **Gamepad**, also evaluate the **KBM** binding half and set active. Inert now, since the mode stays KBM. It also logs a one-time warning if it ever sees Gamepad mode (Task 2.2 guard).
+2. **`updateGameplayAction` detour (inverted, Task 3.1):** if mode == **KeyboardMouse**, also evaluate the **gamepad** half and set active. If it ever sees Gamepad mode it only logs a one-time warning (Task 2.2 guard).
 3. **`addDirectionalActionInput` detour (still upstream polarity):** if mode == **Gamepad**, also add **KBM** directional values. Inert now as well.
 
 Keen constants: [`keen/input.go`](keen/input.go) — `InputModeKeyboardMouse=0`, `InputModeGamepad=1`. KBM binding offsets `32` / `84` are known. Gamepad half `136` and gamepad binding offsets `168` / `220` were documented in Task 1.3 ([`notes/action-layout.md`](notes/action-layout.md)).
@@ -268,15 +268,19 @@ Goal: know which events flip UI to gamepad so we can neutralize them.
 
 ### Phase 3 — Merge gamepad stick into KBM mode
 
-#### Task 3.1 — Invert `updateGameplayAction` merge
+#### Task 3.1 — Invert `updateGameplayAction` merge [Implemented, in-game check pending]
 
 **Do:** Change detour so when mode == **KeyboardMouse**, also evaluate the **gamepad** half and OR into active (mirror current gamepad←KBM merge).
 
 **Verify:**
 
-- [ ] Builds
+- [x] Builds
 - [ ] With stick input, relevant actions become active while mode remains KBM (log/trace or in-game movement attempt)
 - [ ] Idle stick does not pin actions active
+
+**Result (2026-11-09, code):** In KeyboardMouse mode the detour now calls `evaluateGameplayActionHalf(action + 136, index, time)` and sets active if it returns true, never clearing it. All gamepad bindings count, buttons included, so a Keyzen key mapped to XInput A should trigger Jump. The original already updates all four bindings (with their modifiers) before evaluating the mode's half, so the gamepad half is current. Gamepad mode now only logs the one-time warning; the old keyboard-mouse merge was removed. Each gamepad-caused activation that was not active the previous frame logs `gamepad half activated action` at trace level, using the previously active byte (`+0x111`, read at install). `TestActiveStoreOffsets` asserts active `+0x110` / previously active `+0x111`. `just build` and `just test` pass.
+
+**In-game check to do:** `just deploy`, launch with `EMIM_LOG_LEVEL=trace`. A Keyzen key mapped to A jumps while prompts stay KBM. A full stick push logs trace lines for the movement actions; the character does not move yet (Task 3.2). An idle stick logs nothing and leaves no action stuck. Keyboard and mouse stay native, and the log has no "input mode is Gamepad" warning.
 
 #### Task 3.2 — Invert `addDirectionalActionInput` for stick/axis
 

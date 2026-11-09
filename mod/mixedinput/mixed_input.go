@@ -23,9 +23,8 @@ var (
 	ErrActiveStoreOutsideUpdateGameplayAction = errors.New("active state store is not in updateGameplayAction")
 )
 
-// MixedInput leaves the input mode unchanged on gamepad input, so it stays KeyboardMouse. In Gamepad
-// mode the keyboard mouse bindings count alongside the gamepad ones, which no longer happens in
-// practice because nothing switches to Gamepad.
+// MixedInput leaves the input mode unchanged on gamepad input, so it stays KeyboardMouse. In
+// KeyboardMouse mode the gamepad bindings count alongside the keyboard mouse ones.
 type MixedInput struct {
 	log        *log.TraceLogger
 	installErr error
@@ -34,10 +33,11 @@ type MixedInput struct {
 	updateGameplayActionDetour      hook.Detour
 	addDirectionalActionInputDetour hook.Detour
 
-	evaluateGameplayActionHalf uintptr
-	actionEnabledOffset        uintptr
-	actionActiveOffset         uintptr
-	bindingLayout              BindingLayout
+	evaluateGameplayActionHalf   uintptr
+	actionEnabledOffset          uintptr
+	actionActiveOffset           uintptr
+	actionPreviouslyActiveOffset uintptr
+	bindingLayout                BindingLayout
 
 	gamepadModeSeen atomic.Bool
 }
@@ -120,7 +120,7 @@ func (m *MixedInput) install() error {
 	m.evaluateGameplayActionHalf = activeStore + evaluateCallEnd +
 		uintptr(int32(binary.LittleEndian.Uint32(image[activeStore-module+evaluateCallRelOffset:])))
 	m.actionEnabledOffset = uintptr(binary.LittleEndian.Uint32(image[updateGameplayAction-module+actionEnabledDispOffset:]))
-	m.actionActiveOffset = uintptr(binary.LittleEndian.Uint32(image[activeStore-module+activeStoreDispOffset:]))
+	m.actionActiveOffset, m.actionPreviouslyActiveOffset = readActiveStoreOffsets(module, image, activeStore)
 
 	err = m.gamepadEventsKeepInputModePatch.Apply(gamepadEventEntries, noChangeEntries)
 	if err != nil {
@@ -145,11 +145,21 @@ func (m *MixedInput) install() error {
 		"evaluateGameplayActionHalf", fmt.Sprintf("%#x", m.evaluateGameplayActionHalf),
 		"actionEnabledOffset", fmt.Sprintf("%#x", m.actionEnabledOffset),
 		"actionActiveOffset", fmt.Sprintf("%#x", m.actionActiveOffset),
+		"actionPreviouslyActiveOffset", fmt.Sprintf("%#x", m.actionPreviouslyActiveOffset),
 		"gamepadHalf", m.bindingLayout.GamepadHalf,
 		"gamepadBindings", fmt.Sprintf("%d/%d", m.bindingLayout.GamepadPrimaryBinding, m.bindingLayout.GamepadSecondaryBinding),
 		"addDirectionalActionInput", fmt.Sprintf("%#x", addDirectionalActionInput))
 
 	return nil
+}
+
+// readActiveStoreOffsets returns the active and previously active offsets within an action, both
+// stored by updateGameplayAction at activeStore.
+func readActiveStoreOffsets(module uintptr, image []byte, activeStore uintptr) (uintptr, uintptr) {
+	store := activeStore - module
+
+	return uintptr(binary.LittleEndian.Uint32(image[store+activeStoreDispOffset:])),
+		uintptr(binary.LittleEndian.Uint32(image[store+previouslyActiveStoreDispOffset:]))
 }
 
 // inputModeJumpTable is updateInputModeFromEvent's switch over event types 1..16. All values are RVAs.
@@ -220,26 +230,35 @@ func gamepadEventJumpTableEntries(module uintptr, image []byte, updateInputModeF
 		bytes.Repeat(binary.LittleEndian.AppendUint32(nil, uint32(t.noChangeCase)), count), nil
 }
 
-// In Gamepad mode the keyboard mouse half also counts towards the action's active state.
+// In KeyboardMouse mode the gamepad half also counts towards the action's active state. The
+// original has already updated the gamepad bindings, it only skips evaluating their half.
 func (m *MixedInput) updateGameplayAction(action, mode, keyboardMouseModifiers, gamepadModifiers, index, time uintptr) uintptr {
 	m.updateGameplayActionDetour.CallOriginal(action, mode, keyboardMouseModifiers, gamepadModifiers, index, time)
 
-	if keen.InputMode(mode) != keen.InputModeGamepad {
+	if keen.InputMode(mode) == keen.InputModeGamepad {
+		if m.gamepadModeSeen.CompareAndSwap(false, true) {
+			m.log.Warn("input mode is Gamepad although gamepad events are patched to keep KeyboardMouse")
+		}
+
 		return 0
 	}
 
-	if m.gamepadModeSeen.CompareAndSwap(false, true) {
-		m.log.Warn("input mode is Gamepad although gamepad events are patched to keep KeyboardMouse")
-	}
-
-	if *(*byte)(unsafe.Pointer(action + m.actionEnabledOffset)) == 0 {
+	if keen.InputMode(mode) != keen.InputModeKeyboardMouse ||
+		*(*byte)(unsafe.Pointer(action + m.actionEnabledOffset)) == 0 {
 		return 0
 	}
 
-	keyboardMouseActive, _, _ := syscall.SyscallN(m.evaluateGameplayActionHalf, action, index, time)
-	if byte(keyboardMouseActive) != 0 {
-		*(*byte)(unsafe.Pointer(action + m.actionActiveOffset)) = 1
+	gamepadActive, _, _ := syscall.SyscallN(m.evaluateGameplayActionHalf, action+m.bindingLayout.GamepadHalf, index, time)
+	if byte(gamepadActive) == 0 {
+		return 0
 	}
+
+	active := (*byte)(unsafe.Pointer(action + m.actionActiveOffset))
+	if *active == 0 && *(*byte)(unsafe.Pointer(action + m.actionPreviouslyActiveOffset)) == 0 {
+		m.log.Trace("gamepad half activated action", "index", byte(index), "action", fmt.Sprintf("%#x", action))
+	}
+
+	*active = 1
 
 	return 0
 }

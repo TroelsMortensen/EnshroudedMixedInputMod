@@ -74,6 +74,9 @@ const (
 	ActionGamepadHalf             = 136
 	ActionGamepadPrimaryBinding   = 168
 	ActionGamepadSecondaryBinding = 220
+
+	ActionActive           = 272
+	ActionPreviouslyActive = 273
 )
 
 const (

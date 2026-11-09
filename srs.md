@@ -1,7 +1,7 @@
 # EnshroudedMixInput — Software Requirements Specification
 
 **Document purpose:** handoff for continuing work in a fresh chat.  
-**Status:** Phases 0–2 complete. Gamepad events no longer change the input mode, so the game stays in KeyboardMouse and keyboard + mouse work natively. Task 3.1 is done: in KeyboardMouse mode the gamepad half of every action also counts towards its active state, so XInput A jumps while the UI stays KBM. Task 3.2 is done: in KeyboardMouse mode the stick gives analog movement (walk or run by push distance) alongside WASD, with a clean stop on release. Task 3.3 is done: mouse look works unchanged while moving with the stick. Next is Task 3.4.  
+**Status:** Phases 0–2 complete. Gamepad events no longer change the input mode, so the game stays in KeyboardMouse and keyboard + mouse work natively. Task 3.1 is done: in KeyboardMouse mode the gamepad half of every action also counts towards its active state, so XInput A jumps while the UI stays KBM. Task 3.2 is done: in KeyboardMouse mode the stick gives analog movement (walk or run by push distance) alongside WASD, with a clean stop on release. Task 3.3 is done: mouse look works unchanged while moving with the stick. Task 3.4 is done: the stick is movement only, the camera is the mouse's. Phase 3 is complete. Next is Task 4.1.  
 **Last updated:** 2026-11-09
 
 ---
@@ -313,14 +313,16 @@ Goal: know which events flip UI to gamepad so we can neutralize them.
 
 **Observed (2026-11-09, in-game):** No code change needed. Mouse look behaves exactly as in vanilla while moving with the stick: no snaps, jerks or sensitivity change. This matches the code: camera actions 4–7 keep the game's own mouse path, and the stick merge only touches movement actions 0–3.
 
-#### Task 3.4 — Decide camera-from-stick policy
+#### Task 3.4 — Decide camera-from-stick policy [Done]
 
 **Do:** Explicit product choice: stick = movement only (recommended for Keyzen + mouse) vs also feed camera axes. Implement only the chosen policy; document in README.
 
 **Verify:**
 
-- [ ] README states the policy
-- [ ] In-game behavior matches that policy
+- [x] README states the policy
+- [x] In-game behavior matches that policy
+
+**Result (2026-11-09):** Policy is stick = movement only; the camera is the mouse's. No code change: the Task 3.2 merge already covers only movement actions 0–3. README has an "Input behavior" section stating this. In-game (Tasks 3.2 and 3.3) the stick moves the character and never turns the camera.
 
 ---
 

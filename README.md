@@ -13,6 +13,13 @@ Mixed input for [Enshrouded](https://store.steampowered.com/app/1203220/Enshroud
 - Allow mouse use
 - Lock the UI to keyboard/mouse
 
+## Input behavior
+
+- The input mode stays keyboard/mouse; gamepad input never switches the UI or prompts.
+- The XInput stick drives movement only, with analog speed, alongside WASD.
+- The camera is controlled by the mouse. The stick does not feed the camera.
+- Gamepad buttons trigger their bound actions (for example XInput A jumps).
+
 ## Build
 
 See [SETUP.md](SETUP.md) for the Windows toolchain. From the repo root:

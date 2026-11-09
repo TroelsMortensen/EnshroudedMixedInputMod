@@ -1,7 +1,7 @@
 # EnshroudedMixInput — Software Requirements Specification
 
 **Document purpose:** handoff for continuing work in a fresh chat.  
-**Status:** Phases 0–2 complete. Gamepad events no longer change the input mode, so the game stays in KeyboardMouse and keyboard + mouse work natively. Task 3.1 is implemented: in KeyboardMouse mode the gamepad half of every action also counts towards its active state (build and tests pass, in-game check pending). Next is the Task 3.1 in-game check, then Task 3.2.  
+**Status:** Phases 0–2 complete. Gamepad events no longer change the input mode, so the game stays in KeyboardMouse and keyboard + mouse work natively. Task 3.1 is done: in KeyboardMouse mode the gamepad half of every action also counts towards its active state, so XInput A jumps while the UI stays KBM. The stick activates the movement actions but does not move the character yet. Next is Task 3.2.  
 **Last updated:** 2026-11-09
 
 ---
@@ -268,19 +268,25 @@ Goal: know which events flip UI to gamepad so we can neutralize them.
 
 ### Phase 3 — Merge gamepad stick into KBM mode
 
-#### Task 3.1 — Invert `updateGameplayAction` merge [Implemented, in-game check pending]
+#### Task 3.1 — Invert `updateGameplayAction` merge [Done]
 
 **Do:** Change detour so when mode == **KeyboardMouse**, also evaluate the **gamepad** half and OR into active (mirror current gamepad←KBM merge).
 
 **Verify:**
 
 - [x] Builds
-- [ ] With stick input, relevant actions become active while mode remains KBM (log/trace or in-game movement attempt)
-- [ ] Idle stick does not pin actions active
+- [x] With stick input, relevant actions become active while mode remains KBM (log/trace or in-game movement attempt)
+- [x] Idle stick does not pin actions active
 
 **Result (2026-11-09, code):** In KeyboardMouse mode the detour now calls `evaluateGameplayActionHalf(action + 136, index, time)` and sets active if it returns true, never clearing it. All gamepad bindings count, buttons included, so a Keyzen key mapped to XInput A should trigger Jump. The original already updates all four bindings (with their modifiers) before evaluating the mode's half, so the gamepad half is current. Gamepad mode now only logs the one-time warning; the old keyboard-mouse merge was removed. Each gamepad-caused activation that was not active the previous frame logs `gamepad half activated action` at trace level, using the previously active byte (`+0x111`, read at install). `TestActiveStoreOffsets` asserts active `+0x110` / previously active `+0x111`. `just build` and `just test` pass.
 
-**In-game check to do:** `just deploy`, launch with `EMIM_LOG_LEVEL=trace`. A Keyzen key mapped to A jumps while prompts stay KBM. A full stick push logs trace lines for the movement actions; the character does not move yet (Task 3.2). An idle stick logs nothing and leaves no action stuck. Keyboard and mouse stay native, and the log has no "input mode is Gamepad" warning.
+**Observed (2026-11-09, in-game with `EMIM_LOG_LEVEL=trace`):** UI stayed KBM with no stutter throughout. The Keyzen key mapped to XInput A makes the character jump. The stick does nothing visible, as expected until Task 3.2. The log confirms:
+
+- The `index` argument of `updateGameplayAction` is the action number: action addresses are 280 bytes apart per index (index 73 = index 0 + 73 × 280).
+- Stick pushes activate movement actions 0–3 in direction combinations (e.g. 1+2 = right+up). Camera actions 4–7 never fired, so the Keyzen stick reports as the left stick only.
+- XInput A activates actions 73 and 78 together (one of them is Jump).
+- Each activation logs once and the lines stop when idle, so no action is pinned active.
+- No "input mode is Gamepad" warning.
 
 #### Task 3.2 — Invert `addDirectionalActionInput` for stick/axis
 

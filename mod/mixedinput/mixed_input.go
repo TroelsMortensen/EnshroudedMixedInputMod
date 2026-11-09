@@ -35,6 +35,7 @@ type MixedInput struct {
 	evaluateGameplayActionHalf uintptr
 	actionEnabledOffset        uintptr
 	actionActiveOffset         uintptr
+	bindingLayout              BindingLayout
 }
 
 func New() *MixedInput {
@@ -107,6 +108,11 @@ func (m *MixedInput) install() error {
 		return fmt.Errorf("addDirectionalActionInput: %w", err)
 	}
 
+	m.bindingLayout, err = readBindingLayout(module, image, addDirectionalActionInput, updateGameplayAction)
+	if err != nil {
+		return err
+	}
+
 	m.evaluateGameplayActionHalf = activeStore + evaluateCallEnd +
 		uintptr(int32(binary.LittleEndian.Uint32(image[activeStore-module+evaluateCallRelOffset:])))
 	m.actionEnabledOffset = uintptr(binary.LittleEndian.Uint32(image[updateGameplayAction-module+actionEnabledDispOffset:]))
@@ -135,38 +141,71 @@ func (m *MixedInput) install() error {
 		"evaluateGameplayActionHalf", fmt.Sprintf("%#x", m.evaluateGameplayActionHalf),
 		"actionEnabledOffset", fmt.Sprintf("%#x", m.actionEnabledOffset),
 		"actionActiveOffset", fmt.Sprintf("%#x", m.actionActiveOffset),
+		"gamepadHalf", m.bindingLayout.GamepadHalf,
+		"gamepadBindings", fmt.Sprintf("%d/%d", m.bindingLayout.GamepadPrimaryBinding, m.bindingLayout.GamepadSecondaryBinding),
 		"addDirectionalActionInput", fmt.Sprintf("%#x", addDirectionalActionInput))
 
 	return nil
 }
 
-// mouseEventJumpTableEntries returns the address of the MouseDown..MouseDoubleClick jump table entries
-// and their replacement, all pointing at the no change case.
-func mouseEventJumpTableEntries(module uintptr, image []byte, updateInputModeFromEvent uintptr) (uintptr, []byte, error) {
+// inputModeJumpTable is updateInputModeFromEvent's switch over event types 1..16. All values are RVAs.
+type inputModeJumpTable struct {
+	table             uintptr
+	noChangeCase      uintptr
+	keyboardMouseCase uintptr
+	entries           [jumpTableEventTypeCount]uintptr
+}
+
+func readInputModeJumpTable(module uintptr, image []byte, updateInputModeFromEvent uintptr) (inputModeJumpTable, error) {
 	function := updateInputModeFromEvent - module
 
 	imageBase := updateInputModeFromEvent + imageBaseLeaEnd +
 		uintptr(int32(binary.LittleEndian.Uint32(image[function+imageBaseLeaDispOffset:])))
 	if imageBase != module {
-		return 0, nil, fmt.Errorf("%w: %#x, module at %#x", ErrJumpTableBaseDisagrees, imageBase, module)
+		return inputModeJumpTable{}, fmt.Errorf("%w: %#x, module at %#x", ErrJumpTableBaseDisagrees, imageBase, module)
 	}
 
-	noChangeCase := function + noChangeJumpEnd + uintptr(int8(image[function+noChangeJumpRelOffset]))
-	keyboardMouseCase := function + keyboardMouseCaseOffset
+	t := inputModeJumpTable{
+		table:             uintptr(binary.LittleEndian.Uint32(image[function+jumpTableDispOffset:])),
+		noChangeCase:      function + noChangeJumpEnd + uintptr(int8(image[function+noChangeJumpRelOffset])),
+		keyboardMouseCase: function + keyboardMouseCaseOffset,
+	}
 
-	jumpTable := uintptr(binary.LittleEndian.Uint32(image[function+jumpTableDispOffset:]))
-	first := jumpTable + uintptr(keen.InputEventTypeMouseDown-jumpTableFirstEventType)*jumpTableEntrySize
+	for i := range t.entries {
+		t.entries[i] = uintptr(binary.LittleEndian.Uint32(image[t.entryOffset(jumpTableFirstEventType+keen.InputEventType(i)):]))
+	}
+
+	return t, nil
+}
+
+func (t inputModeJumpTable) entryOffset(eventType keen.InputEventType) uintptr {
+	return t.table + uintptr(eventType-jumpTableFirstEventType)*jumpTableEntrySize
+}
+
+func (t inputModeJumpTable) entry(eventType keen.InputEventType) uintptr {
+	return t.entries[eventType-jumpTableFirstEventType]
+}
+
+// mouseEventJumpTableEntries returns the address of the MouseDown..MouseDoubleClick jump table entries
+// and their replacement, all pointing at the no change case.
+func mouseEventJumpTableEntries(module uintptr, image []byte, updateInputModeFromEvent uintptr) (uintptr, []byte, error) {
+	t, err := readInputModeJumpTable(module, image, updateInputModeFromEvent)
+	if err != nil {
+		return 0, nil, err
+	}
+
 	count := int(keen.InputEventTypeMouseDoubleClick-keen.InputEventTypeMouseDown) + 1
 
 	for i := range count {
-		entry := uintptr(binary.LittleEndian.Uint32(image[first+uintptr(i)*jumpTableEntrySize:]))
-		if entry != keyboardMouseCase {
+		eventType := keen.InputEventTypeMouseDown + keen.InputEventType(i)
+		if t.entry(eventType) != t.keyboardMouseCase {
 			return 0, nil, fmt.Errorf("%w: event type %d leads to %#x, KeyboardMouse store at %#x",
-				ErrMouseEventCaseDisagrees, keen.InputEventTypeMouseDown+keen.InputEventType(i), module+entry, module+keyboardMouseCase)
+				ErrMouseEventCaseDisagrees, eventType, module+t.entry(eventType), module+t.keyboardMouseCase)
 		}
 	}
 
-	return module + first, bytes.Repeat(binary.LittleEndian.AppendUint32(nil, uint32(noChangeCase)), count), nil
+	return module + t.entryOffset(keen.InputEventTypeMouseDown),
+		bytes.Repeat(binary.LittleEndian.AppendUint32(nil, uint32(t.noChangeCase)), count), nil
 }
 
 // In Gamepad mode the keyboard mouse half also counts towards the action's active state.

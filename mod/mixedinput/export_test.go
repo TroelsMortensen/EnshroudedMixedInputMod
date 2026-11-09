@@ -1,3 +1,7 @@
 package mixedinput
 
-var MouseEventJumpTableEntries = mouseEventJumpTableEntries
+var (
+	MouseEventJumpTableEntries = mouseEventJumpTableEntries
+	InputModeEvents            = inputModeEvents
+	ReadBindingLayout          = readBindingLayout
+)

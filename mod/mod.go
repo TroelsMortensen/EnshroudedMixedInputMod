@@ -1,6 +1,7 @@
 package mod
 
 import (
+	"github.com/trmo/EnshroudedMixInputMod/mod/inputtrace"
 	"github.com/trmo/EnshroudedMixInputMod/mod/mixedinput"
 )
 
@@ -17,6 +18,7 @@ func All() []Mod {
 	if len(mods) == 0 {
 		mods = []Mod{
 			mixedinput.New(),
+			inputtrace.New(), // temporary: remove after Phase 2.1
 		}
 	}
 

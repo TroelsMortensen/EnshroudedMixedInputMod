@@ -10,12 +10,23 @@ const (
 	jumpTableDispOffset     = 27 // 45 8B 84 82 disp32
 	keyboardMouseCaseOffset = 37 // 80 39 00
 	jumpTableFirstEventType = 1  // lea eax, [r9-1]
+	jumpTableEventTypeCount = 16 // cmp eax, 0Fh
 	jumpTableEntrySize      = 4
 
 	actionEnabledDispOffset = 13 // 80 B9 disp32 00
 	evaluateCallRelOffset   = 32 // E8 rel32
 	evaluateCallEnd         = 36
 	activeStoreDispOffset   = 38 // 88 86 disp32
+
+	getBindingCallRelOffset                = 66 // E8 rel32 in AddDirectionalActionInputPattern
+	getBindingCallEnd                      = 70
+	getBindingStrideOffset                 = 9  // 4C 69 C8 imm32
+	getBindingGamepadPrimaryOffset         = 37 // B8 imm32
+	getBindingGamepadSecondaryOffset       = 42 // B9 imm32
+	getBindingKeyboardMousePrimaryOffset   = 57 // B8 imm32
+	getBindingKeyboardMouseSecondaryOffset = 62 // B9 imm32
+
+	gamepadHalfDispOffset = 3 // 4C 8D A6 disp32
 )
 
 // void updateInputModeFromEvent(actions, const event *)
@@ -102,6 +113,47 @@ var UpdateGameplayActionActiveStorePattern = pattern.MustParse(
 //	48 8B C8              mov   rcx, rax
 //	48 8B D8              mov   rbx, rax
 //	E8                    call  getBindingAxisValue
+
+// binding *getGameplayActionBinding(actions, uint8 action, bool primary)
+// Offsets are from actions, so they include the actions header.
+//
+//	0F B6 C2              movzx eax, dl
+//	0F B6 11              movzx edx, byte ptr [rcx]          ; InputMode
+//	4C 69 C8 imm32        imul  r9, rax, action size
+//	4C 03 C9              add   r9, rcx
+//	85 D2                 test  edx, edx
+//	74 rel8               jz    keyboard mouse
+//	83 FA 01              cmp   edx, Gamepad
+//	74 rel8               jz    gamepad
+//	49 8D 81 disp32       lea   rax, [r9+gamepad secondary]
+//	C3                    ret
+//	45 84 C0              test  r8b, r8b                     ; gamepad
+//	B8 imm32              mov   eax, gamepad primary
+//	B9 imm32              mov   ecx, gamepad secondary
+//	0F 44 C1              cmovz eax, ecx
+//	49 03 C1              add   rax, r9
+//	C3                    ret
+//	45 84 C0              test  r8b, r8b                     ; keyboard mouse
+//	B8 imm32              mov   eax, keyboard mouse primary
+//	B9 imm32              mov   ecx, keyboard mouse secondary
+//	0F 44 C1              cmovz eax, ecx
+//	49 03 C1              add   rax, r9
+//	C3                    ret
+
+var GetGameplayActionBindingPattern = pattern.MustParse(
+	"0F B6 C2 0F B6 11 4C 69 C8 ?? ?? ?? ?? 4C 03 C9 85 D2 74 ?? 83 FA 01 74 ?? 49 8D 81 ?? ?? ?? ?? C3 " +
+		"45 84 C0 B8 ?? ?? ?? ?? B9 ?? ?? ?? ?? 0F 44 C1 49 03 C1 C3 " +
+		"45 84 C0 B8 ?? ?? ?? ?? B9 ?? ?? ?? ?? 0F 44 C1 49 03 C1 C3")
+
+// updateGameplayAction: r12 = gamepad half, its primary binding updated first.
+//
+//	4C 8D A6 disp32       lea   r12, [rsi+gamepad half]
+//	49 8D 4C 24 20        lea   rcx, [r12+20h]               ; primary binding
+//	E8 rel32              call  updateBinding
+//	41 80 7C 24 39 00     cmp   byte ptr [r12+39h], 0
+
+var UpdateGameplayActionGamepadHalfPattern = pattern.MustParse(
+	"4C 8D A6 ?? ?? ?? ?? 49 8D 4C 24 20 E8 ?? ?? ?? ?? 41 80 7C 24 39 00")
 
 var AddDirectionalActionInputPattern = pattern.MustParse(
 	"48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 57 48 83 EC 20 48 8B DA 41 0F B6 F0 48 8B F9 " +

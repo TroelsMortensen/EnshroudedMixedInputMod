@@ -1,7 +1,7 @@
 # EnshroudedMixInput — Software Requirements Specification
 
 **Document purpose:** handoff for continuing work in a fresh chat.  
-**Status:** Phase 0 complete. Behavior still matches upstream (gamepad UI + mouse merge). Target behavior not implemented yet.  
+**Status:** Phases 0 and 1 complete. Behavior still matches upstream (gamepad UI + mouse merge), plus the temporary `input_trace` diagnostic mod. Target behavior not implemented yet; next is Task 2.1.  
 **Last updated:** 2026-11-09
 
 ---
@@ -82,7 +82,7 @@ In [`mod/mixedinput/mixed_input.go`](mod/mixedinput/mixed_input.go):
 2. **`updateGameplayAction` detour:** if mode == **Gamepad**, also evaluate the **KBM** binding half and set active.
 3. **`addDirectionalActionInput` detour:** if mode == **Gamepad**, also add **KBM** directional values (mouse look, etc.).
 
-Keen constants: [`keen/input.go`](keen/input.go) — `InputModeKeyboardMouse=0`, `InputModeGamepad=1`. KBM binding offsets `32` / `84` are known. **Gamepad binding offsets inside the 280-byte action struct are not yet documented** in this repo.
+Keen constants: [`keen/input.go`](keen/input.go) — `InputModeKeyboardMouse=0`, `InputModeGamepad=1`. KBM binding offsets `32` / `84` are known. Gamepad half `136` and gamepad binding offsets `168` / `220` were documented in Task 1.3 ([`notes/action-layout.md`](notes/action-layout.md)).
 
 ---
 
@@ -107,16 +107,16 @@ addDirectionalActionInput → when mode==KBM, add gamepad stick/axis directional
 ### 4.1 Known RE facts (from patterns / keen)
 
 - `updateInputModeFromEvent(actions, event*)`: `actions[0]` = `InputMode`; `event+0x0c` = event type.
-- Jump table covers event types **1–16** (`lea eax,[r9-1]` then `cmp eax,0Fh`). Mouse→KBM cases are types **9–14**. Gamepad→Gamepad cases are other entries in that table (IDs not yet named in `keen`).
+- Jump table covers event types **1–16** (`lea eax,[r9-1]` then `cmp eax,0Fh`). Mouse→KBM cases are types **9–14**. Gamepad cases are types **2–5** (ButtonDown, ButtonUp, Axis, AnalogStick), now named in `keen` ([`notes/input-mode-events.md`](notes/input-mode-events.md)).
 - Action size **280** bytes; header **8** bytes; KBM primary/secondary bindings at **+32** / **+84**.
 - Directional slots in [`directional.go`](mod/mixedinput/directional.go): buttons `0`, gamepad analog `2`, mouse `4`, special `6`.
 - Movement actions `0–3`, camera `4–7`.
 
 ### 4.2 Unknowns to resolve (early tasks)
 
-1. Which jump-table event types store `InputModeGamepad`.
-2. Offsets of gamepad primary/secondary bindings within an action.
-3. How to call / locate the **gamepad** evaluate half (upstream already finds the KBM half relative to the active-store site).
+1. Which jump-table event types store `InputModeGamepad`. **Resolved (1.1/1.2):** types 2–5. The Keyzen stick sends 5, and its buttons send 2/3.
+2. Offsets of gamepad primary/secondary bindings within an action. **Resolved (1.3):** `+168` / `+220`.
+3. How to call / locate the **gamepad** evaluate half (upstream already finds the KBM half relative to the active-store site). **Resolved (1.3):** call the same `evaluateGameplayActionHalf` with `action + 136` (the gamepad half, `r12`).
 
 ---
 
@@ -185,7 +185,7 @@ just test
 
 Goal: know which events flip UI to gamepad so we can neutralize them.
 
-#### Task 1.1 — Map `updateInputModeFromEvent` jump table
+#### Task 1.1 — Map `updateInputModeFromEvent` jump table [Done]
 
 **Do:** Using the existing pattern finder / debugger / dump of jump-table entries (same helpers as `mouseEventJumpTableEntries` in [`mixed_input.go`](mod/mixedinput/mixed_input.go)):
 
@@ -194,26 +194,32 @@ Goal: know which events flip UI to gamepad so we can neutralize them.
 
 **Verify:**
 
-- [ ] Written table in this SRS or a short `notes/input-mode-events.md`: event type → case
-- [ ] Mouse 9–14 still match “KeyboardMouse store” before any new patch (sanity)
+- [x] Written table in this SRS or a short `notes/input-mode-events.md`: event type → case
+- [x] Mouse 9–14 still match “KeyboardMouse store” before any new patch (sanity)
 
-#### Task 1.2 — Confirm gamepad event types in-game or via RE
+**Result (2026-11-09):** see [`notes/input-mode-events.md`](notes/input-mode-events.md). Gamepad store: types 2–5 (ButtonDown, ButtonUp, Axis, AnalogStick; AnalogStick only past a movement threshold). KeyboardMouse store: 7–14 (KeyDown, KeyUp, mouse). Everything else is no change. Reproduce with `TestInputModeJumpTableMap`.
+
+#### Task 1.2 — Confirm gamepad event types in-game or via RE [Done]
 
 **Do:** Identify which types fire on XInput stick move / axis (Keyzen). Prefer static RE first; confirm with logging if needed (temporary log in a detour is OK in a later task).
 
 **Verify:**
 
-- [ ] List of event type IDs that set `InputModeGamepad`
-- [ ] Constants added (or drafted) in `keen/input.go` with comments
+- [x] List of event type IDs that set `InputModeGamepad`
+- [x] Constants added (or drafted) in `keen/input.go` with comments
 
-#### Task 1.3 — Document gamepad binding layout
+**Result (2026-11-09):** Gamepad store is types 2 ButtonDown, 3 ButtonUp, 4 Axis, 5 AnalogStick. In-game, the Keyzen stick sends only 5 AnalogStick (it switches the mode only past the XInput deadzone of `0.2395`), and a Keyzen button sends 2/3. No Axis events were seen. Event layout is in [`notes/input-mode-events.md`](notes/input-mode-events.md). The temporary trace mod `mod/inputtrace` stays installed until Task 2.1 is verified.
+
+#### Task 1.3 — Document gamepad binding layout [Done]
 
 **Do:** Find primary/secondary gamepad binding offsets inside the 280-byte action (mirror KBM 32/84). Note how `updateGameplayAction` selects the gamepad half (`r12` in pattern comments).
 
 **Verify:**
 
-- [ ] `ActionGamepadPrimaryBinding` / `ActionGamepadSecondaryBinding` (names flexible) values written down
-- [ ] Confidence note: how they were found (disasm / RTTI / comparison)
+- [x] `ActionGamepadPrimaryBinding` / `ActionGamepadSecondaryBinding` (names flexible) values written down
+- [x] Confidence note: how they were found (disasm / RTTI / comparison)
+
+**Result (2026-11-09):** gamepad half at action `+136` (`lea r12, [rsi+88h]`), gamepad primary / secondary bindings at `+168` / `+220`. Each half is 136 bytes and each binding 52. `getGameplayActionBinding` and `updateGameplayAction` agree independently. The mod reads the offsets at install (`readBindingLayout`), and `TestBindingLayout` asserts them against `keen/input.go`. An in-game dump showed movement and camera gamepad bindings = 8 GamepadStick at `+168`, and 0 Unbound at `+220`. Details are in [`notes/action-layout.md`](notes/action-layout.md).
 
 ---
 

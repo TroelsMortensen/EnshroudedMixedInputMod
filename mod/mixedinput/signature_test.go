@@ -32,6 +32,16 @@ func TestSignatures(t *testing.T) {
 			Err:     nil,
 		},
 		{
+			Name:    "SUCCESS_GetGameplayActionBinding",
+			Pattern: mixedinput.GetGameplayActionBindingPattern,
+			Err:     nil,
+		},
+		{
+			Name:    "SUCCESS_UpdateGameplayActionGamepadHalf",
+			Pattern: mixedinput.UpdateGameplayActionGamepadHalfPattern,
+			Err:     nil,
+		},
+		{
 			Name:    "FAIL_AmbiguousPattern",
 			Pattern: pattern.MustParse("48 8B 07"),
 			Err:     hook.ErrAmbiguousMatch,

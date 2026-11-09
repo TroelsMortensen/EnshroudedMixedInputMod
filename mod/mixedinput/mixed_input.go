@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"sync/atomic"
 	"syscall"
 	"unsafe"
 
@@ -37,6 +38,8 @@ type MixedInput struct {
 	actionEnabledOffset        uintptr
 	actionActiveOffset         uintptr
 	bindingLayout              BindingLayout
+
+	gamepadModeSeen atomic.Bool
 }
 
 func New() *MixedInput {
@@ -221,7 +224,15 @@ func gamepadEventJumpTableEntries(module uintptr, image []byte, updateInputModeF
 func (m *MixedInput) updateGameplayAction(action, mode, keyboardMouseModifiers, gamepadModifiers, index, time uintptr) uintptr {
 	m.updateGameplayActionDetour.CallOriginal(action, mode, keyboardMouseModifiers, gamepadModifiers, index, time)
 
-	if keen.InputMode(mode) != keen.InputModeGamepad || *(*byte)(unsafe.Pointer(action + m.actionEnabledOffset)) == 0 {
+	if keen.InputMode(mode) != keen.InputModeGamepad {
+		return 0
+	}
+
+	if m.gamepadModeSeen.CompareAndSwap(false, true) {
+		m.log.Warn("input mode is Gamepad although gamepad events are patched to keep KeyboardMouse")
+	}
+
+	if *(*byte)(unsafe.Pointer(action + m.actionEnabledOffset)) == 0 {
 		return 0
 	}
 

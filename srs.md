@@ -1,7 +1,7 @@
 # EnshroudedMixInput — Software Requirements Specification
 
 **Document purpose:** handoff for continuing work in a fresh chat.  
-**Status:** Phases 0 and 1 complete, Task 2.1 done. Gamepad events no longer change the input mode, so the game stays in KeyboardMouse. Stick input is ignored until Phase 3 merges it. Next is Task 2.2.  
+**Status:** Phases 0–2 complete. Gamepad events no longer change the input mode, so the game stays in KeyboardMouse and keyboard + mouse work natively. Stick input is ignored until Phase 3 merges it. Next is Task 3.1.  
 **Last updated:** 2026-11-09
 
 ---
@@ -79,7 +79,7 @@ Toolchain: see [`SETUP.md`](SETUP.md). `justfile` uses `-G "MinGW Makefiles"` fo
 In [`mod/mixedinput/mixed_input.go`](mod/mixedinput/mixed_input.go):
 
 1. **Jump-table patch** on `updateInputModeFromEvent`: gamepad event types **2–5** → “no change” (do not switch to Gamepad). Mouse types 9–14 are unpatched and store KBM as in vanilla. (Task 2.1)
-2. **`updateGameplayAction` detour (still upstream polarity):** if mode == **Gamepad**, also evaluate the **KBM** binding half and set active. Inert now, since the mode stays KBM.
+2. **`updateGameplayAction` detour (still upstream polarity):** if mode == **Gamepad**, also evaluate the **KBM** binding half and set active. Inert now, since the mode stays KBM. It also logs a one-time warning if it ever sees Gamepad mode (Task 2.2 guard).
 3. **`addDirectionalActionInput` detour (still upstream polarity):** if mode == **Gamepad**, also add **KBM** directional values. Inert now as well.
 
 Keen constants: [`keen/input.go`](keen/input.go) — `InputModeKeyboardMouse=0`, `InputModeGamepad=1`. KBM binding offsets `32` / `84` are known. Gamepad half `136` and gamepad binding offsets `168` / `220` were documented in Task 1.3 ([`notes/action-layout.md`](notes/action-layout.md)).
@@ -241,24 +241,28 @@ Goal: know which events flip UI to gamepad so we can neutralize them.
 
 **Result (2026-11-09):** `gamepadEventJumpTableEntries` replaces the upstream mouse patch. It checks that types 2–5 share one case that stores Gamepad, then points those four entries at the no-change `ret`. Mouse entries are left alone so mouse input switches to KBM natively. `TestGamepadEventJumpTableEntries` covers the patch, and `TestInputModeJumpTableMap` now asserts that types 2–5 are the Gamepad store. In-game with the trace mod: AnalogStick (full push) and ButtonDown/ButtonUp (a Keyzen key mapped to XInput A) all arrived in KeyboardMouse mode with zero mode changes; keyboard and mouse behave natively. As expected, stick and gamepad buttons do nothing until Phase 3. The trace mod was then removed.
 
-#### Task 2.2 — Ensure mode starts / stays KBM
+#### Task 2.2 — Ensure mode starts / stays KBM [Done]
 
 **Do:** If stick alone never sets gamepad but something else still flips, harden (e.g. force-store KBM on those paths, or patch remaining cases). Prefer minimal patches.
 
 **Verify:**
 
-- [ ] Stick spam + mouse look + typing: UI remains KBM for a multi-minute session
-- [ ] No stuttering mode thrash
+- [x] Stick spam + mouse look + typing: UI remains KBM for a multi-minute session
+- [x] No stuttering mode thrash
 
-#### Task 2.3 — Keyboard + mouse native check
+**Result (2026-11-09):** No hardening needed. Added a permanent guard instead: the `updateGameplayAction` detour logs `input mode is Gamepad although gamepad events are patched to keep KeyboardMouse` once if it ever sees Gamepad mode. Soak session of a few minutes (stick spam with full pushes, the Keyzen key mapped to XInput A, mouse look and clicks, menus, alt-tab out and back): prompts stayed KBM, no stutter, and the log held only the load and install lines, so the mode never left KeyboardMouse.
+
+#### Task 2.3 — Keyboard + mouse native check [Done]
 
 **Do:** With mode locked KBM, play with keyboard + mouse only (stick idle).
 
 **Verify:**
 
-- [ ] Movement keys, inventory, chat/typing as applicable work
-- [ ] Mouse look and buttons work
-- [ ] G1 and G2 satisfied without stick
+- [x] Movement keys, inventory, chat/typing as applicable work
+- [x] Mouse look and buttons work
+- [x] G1 and G2 satisfied without stick
+
+**Result (2026-11-09):** Verified in the same session as Task 2.2. Movement keys, menus, mouse look and buttons behave as in vanilla KBM. Chat typing was not explicitly exercised.
 
 ---
 

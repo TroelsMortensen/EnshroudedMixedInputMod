@@ -1,7 +1,7 @@
 # EnshroudedMixInput — Software Requirements Specification
 
 **Document purpose:** handoff for continuing work in a fresh chat.  
-**Status:** Phases 0–2 complete. Gamepad events no longer change the input mode, so the game stays in KeyboardMouse and keyboard + mouse work natively. Task 3.1 is done: in KeyboardMouse mode the gamepad half of every action also counts towards its active state, so XInput A jumps while the UI stays KBM. Task 3.2 is done: in KeyboardMouse mode the stick gives analog movement (walk or run by push distance) alongside WASD, with a clean stop on release. Next is Task 3.3.  
+**Status:** Phases 0–2 complete. Gamepad events no longer change the input mode, so the game stays in KeyboardMouse and keyboard + mouse work natively. Task 3.1 is done: in KeyboardMouse mode the gamepad half of every action also counts towards its active state, so XInput A jumps while the UI stays KBM. Task 3.2 is done: in KeyboardMouse mode the stick gives analog movement (walk or run by push distance) alongside WASD, with a clean stop on release. Task 3.3 is done: mouse look works unchanged while moving with the stick. Next is Task 3.4.  
 **Last updated:** 2026-11-09
 
 ---
@@ -302,14 +302,16 @@ Goal: know which events flip UI to gamepad so we can neutralize them.
 
 **Observed (2026-11-09, in-game):** The Keyzen stick moves the character with analog feel: a partial push walks slowly, a full push runs. So `computeMovementInput` does consume the gamepad analog slot in KeyboardMouse mode, and the contingency RE was not needed. WASD works on its own and together with the stick. Releasing the stick stops cleanly with no drift. XInput A still jumps. Prompts stayed KBM with no stutter.
 
-#### Task 3.3 — Mouse look coexistence
+#### Task 3.3 — Mouse look coexistence [Done]
 
 **Do:** Confirm mouse relative look still works while stick is used for movement. Fix scaling/slot conflicts if look breaks.
 
 **Verify:**
 
-- [ ] Can strafe with stick and look with mouse simultaneously
-- [ ] No sudden camera snaps from stick unless stick is bound to camera (out of scope to rematch gamepad camera unless easy)
+- [x] Can strafe with stick and look with mouse simultaneously
+- [x] No sudden camera snaps from stick unless stick is bound to camera (out of scope to rematch gamepad camera unless easy)
+
+**Observed (2026-11-09, in-game):** No code change needed. Mouse look behaves exactly as in vanilla while moving with the stick: no snaps, jerks or sensitivity change. This matches the code: camera actions 4–7 keep the game's own mouse path, and the stick merge only touches movement actions 0–3.
 
 #### Task 3.4 — Decide camera-from-stick policy
 

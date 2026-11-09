@@ -58,7 +58,7 @@ at RVA `0x1FEF2F0`, so the table starts at RVA `0x1FEF210`). The address `0x141F
 
 ## Confirmed in-game (Task 1.2, 2026-11-09)
 
-Captured with the temporary `mod/inputtrace` detour: one session with an Azeron Keyzen, keyboard and mouse.
+Captured with the temporary `mod/inputtrace` detour (removed after Task 2.1): one session with an Azeron Keyzen, keyboard and mouse.
 
 | Source | Event types seen | Mode change |
 |--------|------------------|-------------|

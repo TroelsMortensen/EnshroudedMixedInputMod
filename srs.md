@@ -1,7 +1,7 @@
 # EnshroudedMixInput — Software Requirements Specification
 
 **Document purpose:** handoff for continuing work in a fresh chat.  
-**Status:** Phases 0 and 1 complete. Behavior still matches upstream (gamepad UI + mouse merge), plus the temporary `input_trace` diagnostic mod. Target behavior not implemented yet; next is Task 2.1.  
+**Status:** Phases 0 and 1 complete, Task 2.1 done. Gamepad events no longer change the input mode, so the game stays in KeyboardMouse. Stick input is ignored until Phase 3 merges it. Next is Task 2.2.  
 **Last updated:** 2026-11-09
 
 ---
@@ -74,13 +74,13 @@ just deploy         # copies into EMIM_GAME_DIR (default Steam Enshrouded path)
 
 Toolchain: see [`SETUP.md`](SETUP.md). `justfile` uses `-G "MinGW Makefiles"` for LLVM-MinGW.
 
-### 3.4 What the code does today (upstream polarity)
+### 3.4 What the code does today
 
 In [`mod/mixedinput/mixed_input.go`](mod/mixedinput/mixed_input.go):
 
-1. **Jump-table patch** on `updateInputModeFromEvent`: mouse event types **9–14** → “no change” (do not switch to KBM).
-2. **`updateGameplayAction` detour:** if mode == **Gamepad**, also evaluate the **KBM** binding half and set active.
-3. **`addDirectionalActionInput` detour:** if mode == **Gamepad**, also add **KBM** directional values (mouse look, etc.).
+1. **Jump-table patch** on `updateInputModeFromEvent`: gamepad event types **2–5** → “no change” (do not switch to Gamepad). Mouse types 9–14 are unpatched and store KBM as in vanilla. (Task 2.1)
+2. **`updateGameplayAction` detour (still upstream polarity):** if mode == **Gamepad**, also evaluate the **KBM** binding half and set active. Inert now, since the mode stays KBM.
+3. **`addDirectionalActionInput` detour (still upstream polarity):** if mode == **Gamepad**, also add **KBM** directional values. Inert now as well.
 
 Keen constants: [`keen/input.go`](keen/input.go) — `InputModeKeyboardMouse=0`, `InputModeGamepad=1`. KBM binding offsets `32` / `84` are known. Gamepad half `136` and gamepad binding offsets `168` / `220` were documented in Task 1.3 ([`notes/action-layout.md`](notes/action-layout.md)).
 
@@ -208,7 +208,7 @@ Goal: know which events flip UI to gamepad so we can neutralize them.
 - [x] List of event type IDs that set `InputModeGamepad`
 - [x] Constants added (or drafted) in `keen/input.go` with comments
 
-**Result (2026-11-09):** Gamepad store is types 2 ButtonDown, 3 ButtonUp, 4 Axis, 5 AnalogStick. In-game, the Keyzen stick sends only 5 AnalogStick (it switches the mode only past the XInput deadzone of `0.2395`), and a Keyzen button sends 2/3. No Axis events were seen. Event layout is in [`notes/input-mode-events.md`](notes/input-mode-events.md). The temporary trace mod `mod/inputtrace` stays installed until Task 2.1 is verified.
+**Result (2026-11-09):** Gamepad store is types 2 ButtonDown, 3 ButtonUp, 4 Axis, 5 AnalogStick. In-game, the Keyzen stick sends only 5 AnalogStick (it switches the mode only past the XInput deadzone of `0.2395`), and a Keyzen button sends 2/3. No Axis events were seen. Event layout is in [`notes/input-mode-events.md`](notes/input-mode-events.md). The temporary trace mod `mod/inputtrace` was removed after Task 2.1 was verified.
 
 #### Task 1.3 — Document gamepad binding layout [Done]
 
@@ -225,7 +225,7 @@ Goal: know which events flip UI to gamepad so we can neutralize them.
 
 ### Phase 2 — Lock UI to KeyboardMouse
 
-#### Task 2.1 — Patch gamepad jump-table entries to “no change”
+#### Task 2.1 — Patch gamepad jump-table entries to “no change” [Done]
 
 **Do:** Extend (or replace) the mouse-only jump-table patch so **gamepad mode-changing** entries point at the same no-change/`ret` path. Decide whether mouse entries still need patching:
 
@@ -234,10 +234,12 @@ Goal: know which events flip UI to gamepad so we can neutralize them.
 
 **Verify:**
 
-- [ ] `just build` succeeds
-- [ ] Unit/signature test updated if jump-table expectations change
-- [ ] In-game: moving Keyzen stick does **not** switch UI to gamepad prompts
-- [ ] Log still shows successful install
+- [x] `just build` succeeds
+- [x] Unit/signature test updated if jump-table expectations change
+- [x] In-game: moving Keyzen stick does **not** switch UI to gamepad prompts
+- [x] Log still shows successful install
+
+**Result (2026-11-09):** `gamepadEventJumpTableEntries` replaces the upstream mouse patch. It checks that types 2–5 share one case that stores Gamepad, then points those four entries at the no-change `ret`. Mouse entries are left alone so mouse input switches to KBM natively. `TestGamepadEventJumpTableEntries` covers the patch, and `TestInputModeJumpTableMap` now asserts that types 2–5 are the Gamepad store. In-game with the trace mod: AnalogStick (full push) and ButtonDown/ButtonUp (a Keyzen key mapped to XInput A) all arrived in KeyboardMouse mode with zero mode changes; keyboard and mouse behave natively. As expected, stick and gamepad buttons do nothing until Phase 3. The trace mod was then removed.
 
 #### Task 2.2 — Ensure mode starts / stays KBM
 

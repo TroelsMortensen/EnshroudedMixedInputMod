@@ -18,17 +18,18 @@ const name = "mixed_input"
 
 var (
 	ErrJumpTableBaseDisagrees                 = errors.New("updateInputModeFromEvent jump table is not relative to the image base")
-	ErrMouseEventCaseDisagrees                = errors.New("updateInputModeFromEvent mouse event case does not lead to the KeyboardMouse store")
+	ErrGamepadEventCaseDisagrees              = errors.New("updateInputModeFromEvent gamepad event case does not lead to the Gamepad store")
 	ErrActiveStoreOutsideUpdateGameplayAction = errors.New("active state store is not in updateGameplayAction")
 )
 
-// MixedInput leaves the input mode unchanged on mouse input. In Gamepad mode the keyboard mouse
-// bindings count alongside the gamepad ones.
+// MixedInput leaves the input mode unchanged on gamepad input, so it stays KeyboardMouse. In Gamepad
+// mode the keyboard mouse bindings count alongside the gamepad ones, which no longer happens in
+// practice because nothing switches to Gamepad.
 type MixedInput struct {
 	log        *log.TraceLogger
 	installErr error
 
-	mouseEventsKeepInputModePatch   hook.CodePatch
+	gamepadEventsKeepInputModePatch hook.CodePatch
 	updateGameplayActionDetour      hook.Detour
 	addDirectionalActionInputDetour hook.Detour
 
@@ -55,7 +56,7 @@ func (m *MixedInput) Install() error {
 }
 
 func (m *MixedInput) Installed() (bool, error) {
-	return m.mouseEventsKeepInputModePatch.Installed() &&
+	return m.gamepadEventsKeepInputModePatch.Installed() &&
 		m.updateGameplayActionDetour.Installed() &&
 		m.addDirectionalActionInputDetour.Installed(), m.installErr
 }
@@ -64,7 +65,7 @@ func (m *MixedInput) Remove() error {
 	return errors.Join(
 		m.addDirectionalActionInputDetour.Restore(),
 		m.updateGameplayActionDetour.Restore(),
-		m.mouseEventsKeepInputModePatch.Restore(),
+		m.gamepadEventsKeepInputModePatch.Restore(),
 	)
 }
 
@@ -79,7 +80,7 @@ func (m *MixedInput) install() error {
 		return fmt.Errorf("updateInputModeFromEvent: %w", err)
 	}
 
-	mouseEventEntries, noChangeEntries, err := mouseEventJumpTableEntries(module, image, updateInputModeFromEvent)
+	gamepadEventEntries, noChangeEntries, err := gamepadEventJumpTableEntries(module, image, updateInputModeFromEvent)
 	if err != nil {
 		return err
 	}
@@ -118,25 +119,25 @@ func (m *MixedInput) install() error {
 	m.actionEnabledOffset = uintptr(binary.LittleEndian.Uint32(image[updateGameplayAction-module+actionEnabledDispOffset:]))
 	m.actionActiveOffset = uintptr(binary.LittleEndian.Uint32(image[activeStore-module+activeStoreDispOffset:]))
 
-	err = m.mouseEventsKeepInputModePatch.Apply(mouseEventEntries, noChangeEntries)
+	err = m.gamepadEventsKeepInputModePatch.Apply(gamepadEventEntries, noChangeEntries)
 	if err != nil {
 		return fmt.Errorf("updateInputModeFromEvent jump table: %w", err)
 	}
 
 	err = m.updateGameplayActionDetour.Apply(updateGameplayAction, syscall.NewCallback(m.updateGameplayAction))
 	if err != nil {
-		return errors.Join(fmt.Errorf("updateGameplayAction: %w", err), m.mouseEventsKeepInputModePatch.Restore())
+		return errors.Join(fmt.Errorf("updateGameplayAction: %w", err), m.gamepadEventsKeepInputModePatch.Restore())
 	}
 
 	err = m.addDirectionalActionInputDetour.Apply(addDirectionalActionInput, syscall.NewCallback(m.addDirectionalActionInput))
 	if err != nil {
 		return errors.Join(fmt.Errorf("addDirectionalActionInput: %w", err),
-			m.updateGameplayActionDetour.Restore(), m.mouseEventsKeepInputModePatch.Restore())
+			m.updateGameplayActionDetour.Restore(), m.gamepadEventsKeepInputModePatch.Restore())
 	}
 
 	m.log.Debug("hooked input mode and gameplay action evaluation",
 		"updateInputModeFromEvent", fmt.Sprintf("%#x", updateInputModeFromEvent),
-		"mouseEventEntries", fmt.Sprintf("%#x", mouseEventEntries),
+		"gamepadEventEntries", fmt.Sprintf("%#x", gamepadEventEntries),
 		"updateGameplayAction", fmt.Sprintf("%#x", updateGameplayAction),
 		"evaluateGameplayActionHalf", fmt.Sprintf("%#x", m.evaluateGameplayActionHalf),
 		"actionEnabledOffset", fmt.Sprintf("%#x", m.actionEnabledOffset),
@@ -186,25 +187,33 @@ func (t inputModeJumpTable) entry(eventType keen.InputEventType) uintptr {
 	return t.entries[eventType-jumpTableFirstEventType]
 }
 
-// mouseEventJumpTableEntries returns the address of the MouseDown..MouseDoubleClick jump table entries
+// gamepadEventJumpTableEntries returns the address of the ButtonDown..AnalogStick jump table entries
 // and their replacement, all pointing at the no change case.
-func mouseEventJumpTableEntries(module uintptr, image []byte, updateInputModeFromEvent uintptr) (uintptr, []byte, error) {
+func gamepadEventJumpTableEntries(module uintptr, image []byte, updateInputModeFromEvent uintptr) (uintptr, []byte, error) {
 	t, err := readInputModeJumpTable(module, image, updateInputModeFromEvent)
 	if err != nil {
 		return 0, nil, err
 	}
 
-	count := int(keen.InputEventTypeMouseDoubleClick-keen.InputEventTypeMouseDown) + 1
+	gamepadCase := t.entry(keen.InputEventTypeButtonDown)
+
+	_, stored := scanCase(image, gamepadCase)
+	if len(stored) != 1 || stored[0] != keen.InputModeGamepad {
+		return 0, nil, fmt.Errorf("%w: ButtonDown case at %#x stores %v",
+			ErrGamepadEventCaseDisagrees, module+gamepadCase, stored)
+	}
+
+	count := int(keen.InputEventTypeAnalogStick-keen.InputEventTypeButtonDown) + 1
 
 	for i := range count {
-		eventType := keen.InputEventTypeMouseDown + keen.InputEventType(i)
-		if t.entry(eventType) != t.keyboardMouseCase {
-			return 0, nil, fmt.Errorf("%w: event type %d leads to %#x, KeyboardMouse store at %#x",
-				ErrMouseEventCaseDisagrees, eventType, module+t.entry(eventType), module+t.keyboardMouseCase)
+		eventType := keen.InputEventTypeButtonDown + keen.InputEventType(i)
+		if t.entry(eventType) != gamepadCase {
+			return 0, nil, fmt.Errorf("%w: event type %d leads to %#x, Gamepad store at %#x",
+				ErrGamepadEventCaseDisagrees, eventType, module+t.entry(eventType), module+gamepadCase)
 		}
 	}
 
-	return module + t.entryOffset(keen.InputEventTypeMouseDown),
+	return module + t.entryOffset(keen.InputEventTypeButtonDown),
 		bytes.Repeat(binary.LittleEndian.AppendUint32(nil, uint32(t.noChangeCase)), count), nil
 }
 

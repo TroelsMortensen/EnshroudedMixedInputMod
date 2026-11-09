@@ -81,7 +81,7 @@ meanings at `0x18..0x31` are inferred from `updateGameplayAction` and are not ne
 
 ## Confirmed in-game (2026-11-09)
 
-The temporary `mod/inputtrace` dump of the live actions table on the first AnalogStick event, in-world, default bindings:
+The temporary `mod/inputtrace` (removed after Task 2.1) dump of the live actions table on the first AnalogStick event, in-world, default bindings:
 
 | Actions | Keyboard mouse primary / secondary | Gamepad primary / secondary |
 |---------|------------------------------------|-----------------------------|

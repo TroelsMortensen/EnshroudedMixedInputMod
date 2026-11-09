@@ -21,8 +21,8 @@ const (
 	retOpcode          = 0xC3
 )
 
-// The mouse event entries are rewritten to the no change case, which is updateInputModeFromEvent's ret.
-func TestMouseEventJumpTableEntries(t *testing.T) {
+// The gamepad event entries are rewritten to the no change case, which is updateInputModeFromEvent's ret.
+func TestGamepadEventJumpTableEntries(t *testing.T) {
 	module, image := sigtest.LoadModule(t, game.ModuleName)
 
 	updateInputModeFromEvent, err := hook.FindUniquePattern(module, image, mixedinput.UpdateInputModeFromEventPattern)
@@ -30,12 +30,12 @@ func TestMouseEventJumpTableEntries(t *testing.T) {
 		t.Fatalf("updateInputModeFromEvent: %v", err)
 	}
 
-	_, replacement, err := mixedinput.MouseEventJumpTableEntries(module, image, updateInputModeFromEvent)
+	_, replacement, err := mixedinput.GamepadEventJumpTableEntries(module, image, updateInputModeFromEvent)
 	if err != nil {
-		t.Fatalf("MouseEventJumpTableEntries: %v", err)
+		t.Fatalf("GamepadEventJumpTableEntries: %v", err)
 	}
 
-	count := int(keen.InputEventTypeMouseDoubleClick-keen.InputEventTypeMouseDown) + 1
+	count := int(keen.InputEventTypeAnalogStick-keen.InputEventTypeButtonDown) + 1
 	expected := bytes.Repeat(replacement[:jumpTableEntrySize], count)
 
 	if !bytes.Equal(replacement, expected) {
@@ -62,9 +62,9 @@ func TestInputModeJumpTableMap(t *testing.T) {
 		t.Fatalf("InputModeEvents: %v", err)
 	}
 
-	_, replacement, err := mixedinput.MouseEventJumpTableEntries(module, image, updateInputModeFromEvent)
+	_, replacement, err := mixedinput.GamepadEventJumpTableEntries(module, image, updateInputModeFromEvent)
 	if err != nil {
-		t.Fatalf("MouseEventJumpTableEntries: %v", err)
+		t.Fatalf("GamepadEventJumpTableEntries: %v", err)
 	}
 
 	// updateInputModeFromEvent is a leaf without unwind info; its cases lie between its start and the shared ret.
@@ -84,6 +84,12 @@ func TestInputModeJumpTableMap(t *testing.T) {
 		if mouse && event.Case != mixedinput.InputModeEventCaseKeyboardMouse {
 			t.Errorf("mouse event type %d is %s, expected %s",
 				event.Type, event.Case, mixedinput.InputModeEventCaseKeyboardMouse)
+		}
+
+		gamepad := event.Type >= keen.InputEventTypeButtonDown && event.Type <= keen.InputEventTypeAnalogStick
+		if gamepad && event.Case != mixedinput.InputModeEventCaseGamepad {
+			t.Errorf("gamepad event type %d is %s, expected %s",
+				event.Type, event.Case, mixedinput.InputModeEventCaseGamepad)
 		}
 	}
 }

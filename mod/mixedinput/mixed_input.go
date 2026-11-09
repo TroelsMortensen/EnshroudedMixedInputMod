@@ -24,7 +24,8 @@ var (
 )
 
 // MixedInput leaves the input mode unchanged on gamepad input, so it stays KeyboardMouse. In
-// KeyboardMouse mode the gamepad bindings count alongside the keyboard mouse ones.
+// KeyboardMouse mode the gamepad bindings count alongside the keyboard mouse ones, and the gamepad
+// stick adds its analog input to movement.
 type MixedInput struct {
 	log        *log.TraceLogger
 	installErr error
@@ -39,7 +40,8 @@ type MixedInput struct {
 	actionPreviouslyActiveOffset uintptr
 	bindingLayout                BindingLayout
 
-	gamepadModeSeen atomic.Bool
+	gamepadModeSeen   atomic.Bool
+	stickMovementSeen atomic.Bool
 }
 
 func New() *MixedInput {
@@ -263,29 +265,40 @@ func (m *MixedInput) updateGameplayAction(action, mode, keyboardMouseModifiers, 
 	return 0
 }
 
-// In Gamepad mode the keyboard mouse binding adds its input after the gamepad one.
+// In KeyboardMouse mode a movement action's gamepad stick or axis binding adds its analog input
+// after the keyboard mouse one. Gamepad buttons are left out so they do not add to the keys.
 func (m *MixedInput) addDirectionalActionInput(input, actions, action, primary, dt uintptr) uintptr {
 	result := m.addDirectionalActionInputDetour.CallOriginal(input, actions, action, primary, dt)
 
-	if *(*keen.InputMode)(unsafe.Pointer(actions)) != keen.InputModeGamepad {
+	gameplayAction := keen.GameplayAction(action)
+	if *(*keen.InputMode)(unsafe.Pointer(actions)) != keen.InputModeKeyboardMouse ||
+		gameplayAction > keen.GameplayActionMovementDown {
 		return result
 	}
 
-	actionStruct := actions + keen.ActionsHeaderSize + keen.ActionSize*uintptr(byte(action))
+	actionStruct := actions + keen.ActionsHeaderSize + keen.ActionSize*uintptr(gameplayAction)
 	if *(*byte)(unsafe.Pointer(actionStruct + m.actionActiveOffset)) == 0 {
 		return result
 	}
 
-	binding := actionStruct + keen.ActionKeyboardMouseSecondaryBinding
+	binding := actionStruct + m.bindingLayout.GamepadSecondaryBinding
 	if byte(primary) != 0 {
-		binding = actionStruct + keen.ActionKeyboardMousePrimaryBinding
+		binding = actionStruct + m.bindingLayout.GamepadPrimaryBinding
 	}
 
 	kind := *(*keen.BindingSourceKind)(unsafe.Pointer(binding + keen.BindingSourceKindOffset))
-	snapshot := *(*float32)(unsafe.Pointer(binding + keen.BindingSnapshotValueOffset))
-	value := bindingAxisValue(keen.GameplayAction(action), kind, snapshot, int64(dt))
+	if kind != keen.BindingSourceGamepadStick && kind != keen.BindingSourceGamepadAxis {
+		return result
+	}
 
-	addDirectional((*DirectionalInput)(unsafe.Pointer(input)), directionalSlot(kind), keen.GameplayAction(action), value)
+	snapshot := *(*float32)(unsafe.Pointer(binding + keen.BindingSnapshotValueOffset))
+	value := bindingAxisValue(gameplayAction, kind, snapshot, int64(dt))
+
+	addDirectional((*DirectionalInput)(unsafe.Pointer(input)), directionalSlot(kind), gameplayAction, value)
+
+	if value != 0 && m.stickMovementSeen.CompareAndSwap(false, true) {
+		m.log.Debug("gamepad stick added to movement input", "action", byte(gameplayAction), "kind", byte(kind), "value", value)
+	}
 
 	return result
 }

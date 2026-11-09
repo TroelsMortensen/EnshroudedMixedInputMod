@@ -1,7 +1,7 @@
 # EnshroudedMixInput — Software Requirements Specification
 
 **Document purpose:** handoff for continuing work in a fresh chat.  
-**Status:** Phases 0–2 complete. Gamepad events no longer change the input mode, so the game stays in KeyboardMouse and keyboard + mouse work natively. Task 3.1 is done: in KeyboardMouse mode the gamepad half of every action also counts towards its active state, so XInput A jumps while the UI stays KBM. The stick activates the movement actions but does not move the character yet. Next is Task 3.2.  
+**Status:** Phases 0–2 complete. Gamepad events no longer change the input mode, so the game stays in KeyboardMouse and keyboard + mouse work natively. Task 3.1 is done: in KeyboardMouse mode the gamepad half of every action also counts towards its active state, so XInput A jumps while the UI stays KBM. Task 3.2 is done: in KeyboardMouse mode the stick gives analog movement (walk or run by push distance) alongside WASD, with a clean stop on release. Next is Task 3.3.  
 **Last updated:** 2026-11-09
 
 ---
@@ -80,7 +80,7 @@ In [`mod/mixedinput/mixed_input.go`](mod/mixedinput/mixed_input.go):
 
 1. **Jump-table patch** on `updateInputModeFromEvent`: gamepad event types **2–5** → “no change” (do not switch to Gamepad). Mouse types 9–14 are unpatched and store KBM as in vanilla. (Task 2.1)
 2. **`updateGameplayAction` detour (inverted, Task 3.1):** if mode == **KeyboardMouse**, also evaluate the **gamepad** half and set active. If it ever sees Gamepad mode it only logs a one-time warning (Task 2.2 guard).
-3. **`addDirectionalActionInput` detour (still upstream polarity):** if mode == **Gamepad**, also add **KBM** directional values. Inert now as well.
+3. **`addDirectionalActionInput` detour (inverted, Task 3.2):** if mode == **KeyboardMouse**, movement actions 0–3 also add their **gamepad stick/axis** value into the gamepad analog slot.
 
 Keen constants: [`keen/input.go`](keen/input.go) — `InputModeKeyboardMouse=0`, `InputModeGamepad=1`. KBM binding offsets `32` / `84` are known. Gamepad half `136` and gamepad binding offsets `168` / `220` were documented in Task 1.3 ([`notes/action-layout.md`](notes/action-layout.md)).
 
@@ -288,15 +288,19 @@ Goal: know which events flip UI to gamepad so we can neutralize them.
 - Each activation logs once and the lines stop when idle, so no action is pinned active.
 - No "input mode is Gamepad" warning.
 
-#### Task 3.2 — Invert `addDirectionalActionInput` for stick/axis
+#### Task 3.2 — Invert `addDirectionalActionInput` for stick/axis [Done]
 
 **Do:** When mode == KBM, read gamepad stick/axis bindings and `addDirectional` into the gamepad analog slot. Focus first on **movement** actions 0–3.
 
 **Verify:**
 
-- [ ] Builds
-- [ ] In-game: stick moves character with analog feel while UI stays KBM
-- [ ] Keyboard WASD still works (G1 + G3)
+- [x] Builds
+- [x] In-game: stick moves character with analog feel while UI stays KBM
+- [x] Keyboard WASD still works (G1 + G3)
+
+**Result (2026-11-09, code):** After the original adds the keyboard mouse value, the detour checks for KeyboardMouse mode, a movement action 0–3, and the action being active. It then reads the gamepad binding (`+168` primary / `+220` secondary, from `readBindingLayout`). Only GamepadStick (8) and GamepadAxis (7) kinds are merged, so gamepad buttons do not add to the keys. The value goes through `bindingAxisValue` and `addDirectional` into the gamepad analog slot (2/3). Camera actions are untouched (Task 3.4). The first non-zero stick value logs `gamepad stick added to movement input` once at debug level. The Gamepad-mode keyboard mouse merge was removed. `just build` and `just test` pass.
+
+**Observed (2026-11-09, in-game):** The Keyzen stick moves the character with analog feel: a partial push walks slowly, a full push runs. So `computeMovementInput` does consume the gamepad analog slot in KeyboardMouse mode, and the contingency RE was not needed. WASD works on its own and together with the stick. Releasing the stick stops cleanly with no drift. XInput A still jumps. Prompts stayed KBM with no stutter.
 
 #### Task 3.3 — Mouse look coexistence
 

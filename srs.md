@@ -1,8 +1,8 @@
 # EnshroudedMixInput — Software Requirements Specification
 
 **Document purpose:** handoff for continuing work in a fresh chat.  
-**Status:** scaffolding complete; behavior still matches upstream (gamepad UI + mouse merge). Target behavior not implemented yet.  
-**Last updated:** 2026-11-05
+**Status:** Phase 0 complete. Behavior still matches upstream (gamepad UI + mouse merge). Target behavior not implemented yet.  
+**Last updated:** 2026-11-09
 
 ---
 
@@ -139,7 +139,7 @@ Work **in order**. Each task has a clear verify step. Check boxes in this file a
 
 ### Phase 0 — Baseline (confirm foundation)
 
-#### Task 0.1 — Clean rebuild
+#### Task 0.1 — Clean rebuild [Done]
 
 **Do:** From repo root, with toolchain on PATH:
 
@@ -150,32 +150,34 @@ just build
 
 **Verify:**
 
-- [ ] `dist/EnshroudedMixInput.dll` exists
-- [ ] `dist/dinput8.dll` exists
-- [ ] No build errors
+- [x] `dist/EnshroudedMixInput.dll` exists
+- [x] `dist/dinput8.dll` exists
+- [x] No build errors
 
-#### Task 0.2 — Optional signature smoke test
+#### Task 0.2 — Optional signature smoke test [Done]
 
 **Do:**
 
 ```powershell
-$env:EMIM_GAME_DIR = "<path to Enshrouded with enshrouded.exe>"
+$env:EMIM_GAME_DIR = "D:\SteamLibrary\steamapps\common\Enshrouded"
 just test
 ```
 
 **Verify:**
 
-- [ ] Signature / jump-table tests that need the exe pass or skip cleanly with a clear reason
-- [ ] No unexpected package test failures
+- [x] Signature / jump-table tests that need the exe pass or skip cleanly with a clear reason
+- [x] No unexpected package test failures
 
-#### Task 0.3 — In-game baseline (current upstream behavior)
+#### Task 0.3 — In-game baseline (current upstream behavior) [Done]
 
 **Do:** Remove any other `dinput8.dll` / old EMI DLL. `just deploy`. Launch game. Touch stick, then mouse, then keyboard. Read `EnshroudedMixInput.log`.
 
 **Verify:**
 
-- [ ] Log shows mod loaded + `mixed_input` installed
-- [ ] Observe current behavior (likely: mouse OK in gamepad mode; keyboard still flips — document what you see)
+- [x] Log shows mod loaded + `mixed_input` installed
+- [x] Observe current behavior (likely: mouse OK in gamepad mode; keyboard still flips — document what you see)
+
+**Observed (2026-11-09):** Log clean (`EnshroudedMixInput loaded`, `mod installed` / `mixed_input`). Controller/stick input works. Mixing controller + keyboard causes a ~1–2s stutter as the game switches input mode (upstream polarity; expected until Phase 2–3).
 
 ---
 

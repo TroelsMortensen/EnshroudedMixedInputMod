@@ -1,7 +1,7 @@
 # EnshroudedMixInput — Software Requirements Specification
 
 **Document purpose:** handoff for continuing work in a fresh chat.  
-**Status:** Phases 0–2 complete. Gamepad events no longer change the input mode, so the game stays in KeyboardMouse and keyboard + mouse work natively. Task 3.1 is done: in KeyboardMouse mode the gamepad half of every action also counts towards its active state, so XInput A jumps while the UI stays KBM. Task 3.2 is done: in KeyboardMouse mode the stick gives analog movement (walk or run by push distance) alongside WASD, with a clean stop on release. Task 3.3 is done: mouse look works unchanged while moving with the stick. Task 3.4 is done: the stick is movement only, the camera is the mouse's. Phase 3 is complete. Next is Task 4.1.  
+**Status:** Project done (all phases 0–4 complete, definition of done in section 10 met). Gamepad events no longer change the input mode, so the game stays in KeyboardMouse. Gamepad buttons trigger their actions (XInput A jumps), the stick gives analog movement alongside WASD, and the mouse keeps the camera. Uninstalling restores vanilla behavior.  
 **Last updated:** 2026-11-09
 
 ---
@@ -328,36 +328,44 @@ Goal: know which events flip UI to gamepad so we can neutralize them.
 
 ### Phase 4 — Cleanup and product polish
 
-#### Task 4.1 — Remove or gate obsolete mouse-keep-gamepad behavior
+#### Task 4.1 — Remove or gate obsolete mouse-keep-gamepad behavior [Done]
 
 **Do:** Upstream mouse jump-table patch may be unnecessary or harmful for our polarity. Remove dead code paths; rename mod (`mixed_input` → something clearer) if helpful.
 
 **Verify:**
 
-- [ ] Code comments match actual behavior
-- [ ] `just build` + quick in-game smoke of G1–G4
+- [x] Code comments match actual behavior
+- [x] `just build` + quick in-game smoke of G1–G4
 
-#### Task 4.2 — Update docs
+**Result (2026-11-09, code):** The upstream mouse patch and both Gamepad-mode merges were already gone (Tasks 2.1, 3.1, 3.2). The remaining dead code was in [`directional.go`](mod/mixedinput/directional.go): the camera and target-select scaling of `bindingAxisValue` and the non-movement cases of `addDirectional` / `directionalSlot` were unreachable, since only movement actions 0–3 with stick/axis kinds are merged. They are replaced by `addGamepadAnalogMovement`, which adds the snapshot unscaled into slot 2/3, exactly what the old path computed for movement. The stale "upstream patch active" note in [`notes/input-mode-events.md`](notes/input-mode-events.md) is clarified. The mod keeps the name `mixed_input` (user decision). `just build` and `just test` pass.
+
+**Observed (2026-11-09, in-game smoke):** All good after the cleanup: the stick walks or runs by push distance and stops cleanly, WASD works, mouse look is normal, XInput A jumps, and the UI stays KBM.
+
+#### Task 4.2 — Update docs [Done]
 
 **Do:** Update [`README.md`](README.md) status, goals, install notes, env vars. Keep GPL attribution. Optionally tick completed tasks in this SRS.
 
 **Verify:**
 
-- [ ] README no longer says “behavior still upstream” once Phase 3 is done
-- [ ] SETUP still accurate
+- [x] README no longer says “behavior still upstream” once Phase 3 is done
+- [x] SETUP still accurate
 
-#### Task 4.3 — Final acceptance pass
+**Result (2026-11-09):** README status now says the mod works (keyboard + mouse + XInput stick together, UI stays KBM). Its "Input behavior" section (Task 3.4), install notes, env vars and GPL attribution are current. In SETUP the hardcoded `cd c:\MyStuff\...` path was removed; tools, versions (`go 1.27.2`) and `just` recipes match the repo.
+
+#### Task 4.3 — Final acceptance pass [Done]
 
 **Do:** Full play session with Keyzen stick + keyboard + mouse.
 
 **Verify checklist:**
 
-- [ ] **G1** Keyboard works with stick in use
-- [ ] **G2** Mouse works with stick in use
-- [ ] **G3** Stick analog movement works
-- [ ] **G4** UI never switches to gamepad
-- [ ] Log clean of install errors
-- [ ] Uninstall (delete two DLLs) restores vanilla switching
+- [x] **G1** Keyboard works with stick in use
+- [x] **G2** Mouse works with stick in use
+- [x] **G3** Stick analog movement works
+- [x] **G4** UI never switches to gamepad
+- [x] Log clean of install errors
+- [x] Uninstall (delete two DLLs) restores vanilla switching
+
+**Observed (2026-11-09, in-game):** G1–G4 held across the Phase 3 and 4.1 sessions: WASD works alongside the stick, mouse look is unchanged, the stick walks or runs by push distance and stops cleanly, XInput A jumps, and prompts stay KBM with no stutter. The log of the cleaned-up build (`v0.0.0-cba5cfc`) shows only `EnshroudedMixInput loaded`, the hook line and `mod installed`, then trace/debug input lines, with no warnings or errors. The debug line `gamepad stick added to movement input ... kind=8` confirms the stick path. With both DLLs deleted, the mod writes no log (it is not loaded) and moving the stick brings back the vanilla mode-switch stutter. XInput A did not visibly stutter in vanilla, although RE shows ButtonDown also switches to Gamepad there.
 
 ---
 

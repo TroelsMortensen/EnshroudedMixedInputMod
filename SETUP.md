@@ -98,7 +98,6 @@ goversioninfo -h
 Then from the repo root:
 
 ```powershell
-cd c:\MyStuff\Development\EnshroudedMixInputMod
 just build          # Debug → dist/
 # or
 just build Release

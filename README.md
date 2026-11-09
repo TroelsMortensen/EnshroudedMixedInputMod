@@ -2,7 +2,7 @@
 
 Mixed input for [Enshrouded](https://store.steampowered.com/app/1203220/Enshrouded/): keyboard + mouse + XInput analog stick, with the UI locked to keyboard/mouse.
 
-**Status:** scaffolding derived from the upstream mixed-input mod. Behavior is still the upstream gamepad+mouse merge; KBM lock + stick merge comes next.
+**Status:** working. Keyboard, mouse and an XInput stick (tested with an Azeron Keyzen) can be used together, and the UI stays keyboard/mouse.
 
 **Continuing work:** see [`srs.md`](srs.md) for goals, architecture notes, and incremental tasks with verify steps.
 

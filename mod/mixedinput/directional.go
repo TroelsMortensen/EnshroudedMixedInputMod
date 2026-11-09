@@ -1,86 +1,24 @@
 package mixedinput
 
-import (
-	"math"
+import "github.com/trmo/EnshroudedMixInputMod/keen"
 
-	"github.com/trmo/EnshroudedMixInputMod/keen"
-)
-
+// DirectionalInput holds an x, y pair per binding class: buttons at 0/1, gamepad analog at 2/3,
+// mouse at 4/5 and special at 6/7.
 type DirectionalInput [8]float32
 
-const (
-	directionalSlotButtons       = 0
-	directionalSlotGamepadAnalog = 2
-	directionalSlotMouse         = 4
-	directionalSlotSpecial       = 6
-	directionalSlotNone          = -1
-)
+const directionalSlotGamepadAnalog = 2
 
-func directionalSlot(kind keen.BindingSourceKind) int {
-	switch kind {
-	case keen.BindingSourceKey, keen.BindingSourceMouseButton, keen.BindingSourceMouseWheel, keen.BindingSourceGamepadButton:
-		return directionalSlotButtons
-	case keen.BindingSourceGamepadAxis, keen.BindingSourceGamepadStick:
-		return directionalSlotGamepadAnalog
-	case keen.BindingSourceMouseRelativeMovement:
-		return directionalSlotMouse
-	case keen.BindingSourceSpecial:
-		return directionalSlotSpecial
-	default:
-		return directionalSlotNone
-	}
-}
-
-const (
-	cameraAxisScale          = math.Pi / 2
-	cameraMouseDivisor       = 800
-	targetSelectMouseScale   = 0.2
-	targetSelectMouseDivisor = 5000
-	nanosecondsPerSecond     = 1e9
-)
-
-// bindingAxisValue mirrors getBindingAxisValue: snapshot value, scaled per action group.
-func bindingAxisValue(action keen.GameplayAction, kind keen.BindingSourceKind, snapshot float32, dt int64) float32 {
-	seconds := float32(float64(dt) / nanosecondsPerSecond)
-
+// addGamepadAnalogMovement mirrors addDirectionalActionInput for a movement action's stick or axis
+// binding, whose axis value is the snapshot unscaled.
+func addGamepadAnalogMovement(input *DirectionalInput, action keen.GameplayAction, value float32) {
 	switch action {
-	case keen.GameplayActionCameraLeft, keen.GameplayActionCameraRight, keen.GameplayActionCameraUp, keen.GameplayActionCameraDown,
-		keen.GameplayActionCombatTargetSelect1dLeft, keen.GameplayActionCombatTargetSelect1dRight:
-		switch kind {
-		case keen.BindingSourceUnbound:
-			return 0
-		case keen.BindingSourceMouseRelativeMovement:
-			return snapshot * cameraAxisScale / cameraMouseDivisor
-		default:
-			return snapshot * cameraAxisScale * seconds
-		}
-	case keen.GameplayActionCombatTargetSelect2dLeft, keen.GameplayActionCombatTargetSelect2dRight,
-		keen.GameplayActionCombatTargetSelect2dUp, keen.GameplayActionCombatTargetSelect2dDown:
-		if kind == keen.BindingSourceMouseRelativeMovement {
-			return targetSelectMouseScale * snapshot / seconds / targetSelectMouseDivisor
-		}
-
-		return snapshot
-	default:
-		return snapshot
-	}
-}
-
-func addDirectional(input *DirectionalInput, slot int, action keen.GameplayAction, value float32) {
-	if slot < 0 {
-		return
-	}
-
-	switch action {
-	case keen.GameplayActionMovementLeft, keen.GameplayActionCameraRight,
-		keen.GameplayActionCombatTargetSelect1dRight, keen.GameplayActionCombatTargetSelect2dRight:
-		input[slot] -= value
-	case keen.GameplayActionMovementRight, keen.GameplayActionCameraLeft,
-		keen.GameplayActionCombatTargetSelect1dLeft, keen.GameplayActionCombatTargetSelect2dLeft:
-		input[slot] += value
-	case keen.GameplayActionMovementUp, keen.GameplayActionCameraUp, keen.GameplayActionCombatTargetSelect2dUp:
-		input[slot+1] += value
-	case keen.GameplayActionMovementDown, keen.GameplayActionCameraDown, keen.GameplayActionCombatTargetSelect2dDown:
-		input[slot+1] -= value
+	case keen.GameplayActionMovementLeft:
+		input[directionalSlotGamepadAnalog] -= value
+	case keen.GameplayActionMovementRight:
+		input[directionalSlotGamepadAnalog] += value
+	case keen.GameplayActionMovementUp:
+		input[directionalSlotGamepadAnalog+1] += value
+	case keen.GameplayActionMovementDown:
+		input[directionalSlotGamepadAnalog+1] -= value
 	}
 }

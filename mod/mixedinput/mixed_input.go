@@ -291,10 +291,9 @@ func (m *MixedInput) addDirectionalActionInput(input, actions, action, primary, 
 		return result
 	}
 
-	snapshot := *(*float32)(unsafe.Pointer(binding + keen.BindingSnapshotValueOffset))
-	value := bindingAxisValue(gameplayAction, kind, snapshot, int64(dt))
+	value := *(*float32)(unsafe.Pointer(binding + keen.BindingSnapshotValueOffset))
 
-	addDirectional((*DirectionalInput)(unsafe.Pointer(input)), directionalSlot(kind), gameplayAction, value)
+	addGamepadAnalogMovement((*DirectionalInput)(unsafe.Pointer(input)), gameplayAction, value)
 
 	if value != 0 && m.stickMovementSeen.CompareAndSwap(false, true) {
 		m.log.Debug("gamepad stick added to movement input", "action", byte(gameplayAction), "kind", byte(kind), "value", value)

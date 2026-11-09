@@ -65,7 +65,7 @@ Captured with the temporary `mod/inputtrace` detour (removed after Task 2.1): on
 | Keyzen stick | 5 AnalogStick only (no 4 Axis) | KeyboardMouse -> Gamepad, but only once the stick moves past the threshold |
 | Keyzen button | 2 ButtonDown, 3 ButtonUp (button id 5) | Gamepad store (already in Gamepad during the test) |
 | Keyboard | 7 KeyDown, 6 CharacterInput, 8 KeyUp | Gamepad -> KeyboardMouse on KeyDown |
-| Mouse | 9 MouseDown, 10 MouseUp, 11 MouseMove, 12 MouseRelativeMovement | none; upstream patch active |
+| Mouse | 9 MouseDown, 10 MouseUp, 11 MouseMove, 12 MouseRelativeMovement | none; the upstream mouse patch was still active then (replaced by the gamepad patch in Task 2.1) |
 
 The first stick event (a nudge) did not change the mode; a full push 1.3 s later did. Every flip came from
 AnalogStick or KeyDown, so nothing else is toggling the mode.
